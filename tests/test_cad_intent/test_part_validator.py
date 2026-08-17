@@ -40,6 +40,18 @@ def test_extrude_must_follow_sketch():
     assert not any('immediately' in e or '紧' in e for e in errs)
 
 
+def test_extrude_after_non_dict_node():
+    # extrude 紧邻的前一位是非法标量节点（parts 中混入 stray 标量）：不得崩溃
+    intent = _intent([
+        {'id': 's1', 'type': 'sketch', 'profile': [{'kind': 'circle', 'diameter': 0.1}]},
+        42,
+        {'id': 'x1', 'type': 'extrude', 'sketch': 's1', 'operation': 'boss', 'end': 'blind', 'depth': 0.05},
+    ])
+    errs = validate_intent(intent)
+    assert isinstance(errs, list)
+    assert any('紧' in e and 's1' in e for e in errs)
+
+
 def test_extrude_not_immediate():
     intent = _intent([
         {'id': 's1', 'type': 'sketch', 'profile': [{'kind': 'circle', 'diameter': 0.1}]},
@@ -57,6 +69,16 @@ def test_extrude_bad_operation():
     ])
     errs = validate_intent(intent)
     assert any("'operation' 必须为 'boss' 或 'cut'" in e for e in errs)
+
+
+def test_extrude_depth_bool_rejected():
+    # bool 是 int 的子类，但作为尺寸必须被拒绝（净化器缺口）
+    intent = _intent([
+        {'id': 's1', 'type': 'sketch', 'profile': [{'kind': 'circle', 'diameter': 0.1}]},
+        {'id': 'x1', 'type': 'extrude', 'sketch': 's1', 'operation': 'boss', 'end': 'blind', 'depth': True},
+    ])
+    errs = validate_intent(intent)
+    assert any('.depth' in e for e in errs)
 
 
 def test_extrude_blind_requires_depth():

@@ -16,7 +16,9 @@ def check_datum(ref, label, errors):
 
 
 def _is_finite(v):
-    return isinstance(v, (int, float)) and v == v and abs(v) != float('inf')
+    # bool 是 int 的子类，作为尺寸会被接收；净化器必须拒绝
+    return (isinstance(v, (int, float)) and not isinstance(v, bool)
+            and v == v and abs(v) != float('inf'))
 
 
 def check_profile_prim(prim, label, errors):
@@ -58,5 +60,5 @@ def check_sketch_ref(node, nodes, i, seen, label, errors):
         errors.append(label + ": 'sketch'（草图节点 id）必填。")
     elif seen.get(sk) != 'sketch':
         errors.append(label + ": 'sketch' 必须引用更早的 sketch 节点（got '" + str(sk) + "'）。")
-    elif not (prev and prev.get('id') == sk):
+    elif not (isinstance(prev, dict) and prev.get('id') == sk):
         errors.append(label + ": 必须紧跟在它的草图节点 '" + str(sk) + "' 之后。")

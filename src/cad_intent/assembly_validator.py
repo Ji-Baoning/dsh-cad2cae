@@ -1,14 +1,16 @@
 """assembly 图校验：component 引用 + 静/动连接 + 四层装配校验。"""
 
 from cad_intent.schema import (
-    ANCHOR_KINDS, JOINT_CONTACT_KINDS, JOINT_DIRECTION_FLAGS, JOINT_TYPES, STATIC_METHODS,
+    ANCHOR_KINDS, CONNECTION_TYPES, JOINT_CONTACT_KINDS, JOINT_DIRECTION_FLAGS,
+    JOINT_TYPES, STATIC_METHODS,
 )
 from cad_intent.assembly_graph import check_connectivity
 
 
 def _is_point3(v):
     return (isinstance(v, list) and len(v) == 3
-            and all(isinstance(x, (int, float)) and x == x and abs(x) != float('inf') for x in v))
+            and all(isinstance(x, (int, float)) and not isinstance(x, bool)
+                    and x == x and abs(x) != float('inf') for x in v))
 
 
 def _check_anchor(anchor, label, errors):
@@ -98,7 +100,7 @@ def validate_assembly(assembly, parts_ids, ground_part, errors):
             errors.append(where + ' 必须是对象。')
             continue
         ctype = conn.get('type')
-        if ctype not in ('static', 'kinematic'):
+        if ctype not in CONNECTION_TYPES:
             errors.append(where + ": 'type' 必须是 static|kinematic（got '" + str(ctype) + "'）。")
             continue
 

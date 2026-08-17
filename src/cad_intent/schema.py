@@ -18,18 +18,27 @@ PROFILE_KINDS = frozenset({'rectangle', 'circle', 'line', 'arc', 'ellipse', 'spl
 # 拉伸终止方式
 EXTRUDE_ENDS = frozenset({'blind', 'through_all', 'up_to_surface', 'mid_plane'})
 
+# 拉伸操作（受限子集）
+EXTRUDE_OPERATIONS = frozenset({'boss', 'cut'})
+
+# 特征生产节点（可供 array/mirror 引用为更早特征）
+FEATURE_PRODUCERS = frozenset({'extrude', 'fillet', 'chamfer'})
+
 # 阵列方向
 PATTERN_DIRECTIONS = frozenset({'x', 'y', 'z'})
 
 # 静连接工艺
 STATIC_METHODS = frozenset({'weld', 'bond', 'bolt_fastening', 'rivet'})
 
+# 连接类型
+CONNECTION_TYPES = frozenset({'static', 'kinematic'})
+
 # 动连接运动副（机械原理六类）
 JOINT_TYPES = frozenset({
     'revolute', 'prismatic', 'cylindrical', 'planar', 'spherical', 'helical',
 })
 
-# 运动副剩余自由度
+# 运动副剩余自由度（信息性常量；动连接行为校验使用 JOINT_DIRECTION_FLAGS）
 JOINT_DOF = {
     'revolute': 1, 'prismatic': 1, 'cylindrical': 2,
     'planar': 3, 'spherical': 3, 'helical': 1,

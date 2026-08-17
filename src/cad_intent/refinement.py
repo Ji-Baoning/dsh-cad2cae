@@ -3,7 +3,10 @@
 
 def _part_ids(intent):
     ids = set()
-    for node in intent.get('parts') or []:
+    parts = intent.get('parts')
+    if not isinstance(parts, list):
+        return ids
+    for node in parts:
         if isinstance(node, dict) and isinstance(node.get('id'), str):
             ids.add(node['id'])
     return ids
@@ -17,6 +20,36 @@ def _connection_signature(conn):
     elif conn.get('type') == 'static':
         sig['method'] = conn.get('method')
     return sig
+
+
+def _conn_key(conn):
+    """连接的稳定标识：接触零件 part id 的有序元组（非 dict/非字符串 part 则跳过）。"""
+    if not isinstance(conn, dict):
+        return None
+    parts = []
+    contact = conn.get('contact')
+    if isinstance(contact, list):
+        for c in contact:
+            if isinstance(c, dict) and isinstance(c.get('part'), str):
+                parts.append(c['part'])
+    return tuple(sorted(parts)) if parts else None
+
+
+def _sig_tuple(conn):
+    """连接签名的可哈希形式（type/joint/method 指纹），便于按 key 分组比对。"""
+    sig = _connection_signature(conn)
+    return tuple(sorted(sig.items()))
+
+
+def _group_by_key(conns):
+    """按连接 key 分组签名列表；同 key 多条连接（同零件对的多个约束）保留为多重集。"""
+    groups = {}
+    for c in conns:
+        k = _conn_key(c)
+        if k is None:
+            continue
+        groups.setdefault(k, []).append(_sig_tuple(c))
+    return {k: sorted(v) for k, v in groups.items()}
 
 
 def validate_refinement(previous, next_intent, errors):
@@ -38,16 +71,30 @@ def validate_refinement(previous, next_intent, errors):
         if pid not in next_ids:
             errors.append("part 节点 '" + str(pid) + "' 已冻结，细化不得删除。")
 
-    # 连接特征冻结：type/joint/method
-    prev_conns = (previous.get('assembly') or {}).get('connections') or []
-    next_conns = (next_intent.get('assembly') or {}).get('connections') or []
-    if len(prev_conns) == len(next_conns):
-        for pc, nc in zip(prev_conns, next_conns):
-            if not (isinstance(pc, dict) and isinstance(nc, dict)):
-                continue
-            ps = _connection_signature(pc)
-            ns = _connection_signature(nc)
-            for k in ps:
-                if k in ns and ps[k] != ns[k]:
-                    errors.append("连接特征 '" + str(k) + "' 已冻结，细化不得修改（"
-                                  + repr(ps[k]) + ' → ' + repr(ns[k]) + '）。')
+    # 连接特征冻结：type/joint/method（按稳定 key 双向比对，顺序无关）
+    prev_asm = previous.get('assembly')
+    next_asm = next_intent.get('assembly')
+    prev_conns = prev_asm.get('connections') if isinstance(prev_asm, dict) else []
+    next_conns = next_asm.get('connections') if isinstance(next_asm, dict) else []
+    if not isinstance(prev_conns, list):
+        prev_conns = []
+    if not isinstance(next_conns, list):
+        next_conns = []
+    prev_groups = _group_by_key(prev_conns)
+    next_groups = _group_by_key(next_conns)
+    for k, psigs in prev_groups.items():
+        if k not in next_groups:
+            errors.append('连接 ' + str(k) + ' 已冻结，细化不得删除。')
+            continue
+        nsigs = next_groups[k]
+        if psigs != nsigs:
+            for p, n in zip(psigs, nsigs):
+                if p == n:
+                    continue
+                pdc = dict(p)
+                ndc = dict(n)
+                for fk in pdc:
+                    if fk in ndc and pdc[fk] != ndc[fk]:
+                        errors.append("连接特征 '" + str(fk) + "' 已冻结，细化不得修改（"
+                                      + repr(pdc[fk]) + ' → ' + repr(ndc[fk]) + '）。')
+                break

@@ -1,25 +1,18 @@
 """part 图节点校验。"""
 
 from cad_intent.schema import (
-    EXTRUDE_ENDS, NODE_TYPES, PATTERN_DIRECTIONS, PROFILE_KINDS,
+    DATUMS, EXTRUDE_ENDS, EXTRUDE_OPERATIONS, FEATURE_PRODUCERS,
+    NODE_TYPES, PATTERN_DIRECTIONS, PROFILE_KINDS,
 )
-from cad_intent.graph import check_datum, check_profile_prim, check_sketch_ref
+from cad_intent.graph import _is_finite, check_datum, check_profile_prim, check_sketch_ref
 
 
 def _is_pos(v):
     return isinstance(v, (int, float)) and _is_finite(v) and v > 0
 
 
-def _is_finite(v):
-    return isinstance(v, (int, float)) and v == v and abs(v) != float('inf')
-
-
 def _is_int(v):
     return isinstance(v, int) or (isinstance(v, float) and v.is_integer())
-
-
-def _is_bool(v):
-    return isinstance(v, bool)
 
 
 def validate_part_graph(parts, errors):
@@ -65,7 +58,7 @@ def validate_part_graph(parts, errors):
         elif ntype == 'extrude':
             check_sketch_ref(node, parts, i, seen, label, errors)
             op = node.get('operation')
-            if op not in ('boss', 'cut'):
+            if op not in EXTRUDE_OPERATIONS:
                 errors.append(label + ": 'operation' 必须为 'boss' 或 'cut'。")
             end = node.get('end') or 'blind'
             if end not in EXTRUDE_ENDS:
@@ -92,7 +85,7 @@ def validate_part_graph(parts, errors):
             tgt = node.get('feature')
             if not (isinstance(tgt, str) and tgt):
                 errors.append(label + ": 'feature'（更早特征节点 id）必填。")
-            elif seen.get(tgt) not in ('extrude', 'fillet', 'chamfer'):
+            elif seen.get(tgt) not in FEATURE_PRODUCERS:
                 errors.append(label + ": 'feature' '" + str(tgt) + "' 必须引用更早的特征生产节点。")
             if ntype == 'linear_pattern':
                 if node.get('direction') not in PATTERN_DIRECTIONS:
@@ -104,14 +97,14 @@ def validate_part_graph(parts, errors):
 
         elif ntype == 'mirror':
             plane = node.get('plane')
-            if not (isinstance(plane, dict) and plane.get('datum') in ('front', 'top', 'right')):
+            if not (isinstance(plane, dict) and plane.get('datum') in DATUMS):
                 errors.append(label + ": 'plane' 必须是 {datum: front|top|right}。")
             feats = node.get('features')
             if not (isinstance(feats, list) and len(feats) > 0):
                 errors.append(label + ": 'features' 必须是非空数组。")
             else:
                 for f in feats:
-                    if seen.get(f) not in ('extrude', 'fillet', 'chamfer'):
+                    if seen.get(f) not in FEATURE_PRODUCERS:
                         errors.append(label + ".features '" + str(f) + "' 必须引用更早特征节点。")
 
         if isinstance(nid, str) and nid and nid not in seen:

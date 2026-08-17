@@ -15,6 +15,18 @@ def test_assembly_vocabulary():
     assert schema.ASSEMBLY_TYPES == frozenset({'component', 'connection'})
 
 
+def test_extrude_operations():
+    assert schema.EXTRUDE_OPERATIONS == frozenset({'boss', 'cut'})
+
+
+def test_feature_producers():
+    assert schema.FEATURE_PRODUCERS == frozenset({'extrude', 'fillet', 'chamfer'})
+
+
+def test_connection_types():
+    assert schema.CONNECTION_TYPES == frozenset({'static', 'kinematic'})
+
+
 def test_joint_table_covers_six_joints():
     assert schema.JOINT_TYPES == frozenset(
         {'revolute', 'prismatic', 'cylindrical', 'planar', 'spherical', 'helical'}
