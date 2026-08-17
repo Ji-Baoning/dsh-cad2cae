@@ -1,6 +1,7 @@
 """validate_intent 主入口。"""
 
 from cad_intent.part_validator import validate_part_graph
+from cad_intent.assembly_validator import validate_assembly
 from cad_intent.schema import ASSEMBLY_TYPES
 
 
@@ -45,5 +46,8 @@ def validate_intent(intent):
 
     # part 图校验
     validate_part_graph(parts, errors)
+
+    if assembly is not None:
+        validate_assembly(assembly, parts_ids, errors)
 
     return errors
