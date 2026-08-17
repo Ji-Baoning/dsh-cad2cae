@@ -44,6 +44,8 @@ def validate_part_graph(parts, errors):
             continue
         label = where + " (" + ntype + " '" + str(nid) + "')"
         ref = node.get('ref') or {}
+        if not isinstance(ref, dict):
+            ref = {}
 
         if ntype == 'sketch':
             if ref.get('face') is not None:
