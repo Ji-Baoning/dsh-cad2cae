@@ -124,3 +124,18 @@ def test_sketch_without_ref_defaults_front():
     intent = _intent([{'id': 's1', 'type': 'sketch', 'profile': [{'kind': 'circle', 'diameter': 0.1}]}])
     errs = validate_intent(intent)
     assert errs == []
+
+
+def test_circular_pattern_requires_radius():
+    parts = [
+        {'id': 's1', 'type': 'sketch', 'profile': [{'kind': 'circle', 'diameter': 0.01}]},
+        {'id': 'n1', 'type': 'extrude', 'sketch': 's1', 'operation': 'boss', 'end': 'blind', 'depth': 0.02},
+        {'id': 'p1', 'type': 'circular_pattern', 'feature': 'n1', 'count': 4},
+    ]
+    errs = validate_intent(_intent(parts))
+    # 错误信息用中文「阵列」（消息原文 "'radius'（阵列半径，米）为 circular_pattern 所必需。"）
+    assert any("'radius'" in e and '阵列' in e for e in errs)
+
+    parts[-1]['radius'] = 0.05
+    errs = validate_intent(_intent(parts))
+    assert not any("'radius'" in e for e in errs)

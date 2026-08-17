@@ -92,6 +92,9 @@ def validate_part_graph(parts, errors):
                     errors.append(label + ": 'direction' 必须是 " + '|'.join(sorted(PATTERN_DIRECTIONS)) + '。')
                 if not _is_pos(node.get('spacing')):
                     errors.append(label + ": 'spacing' 必须是正米数。")
+            if ntype == 'circular_pattern':
+                if not _is_pos(node.get('radius')):
+                    errors.append(label + ": 'radius'（阵列半径，米）为 circular_pattern 所必需。")
             if not (_is_int(node.get('count')) and node['count'] >= 2):
                 errors.append(label + ": 'count' 必须是 >= 2 的整数。")
 
