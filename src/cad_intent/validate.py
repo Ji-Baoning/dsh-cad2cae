@@ -26,10 +26,6 @@ def validate_intent(intent):
         errors.append('parts 必须是包含至少一个节点的非空数组。')
         return errors
 
-    # 词法分离：parts 数组不得混入装配类型节点
-    if _has_assembly_vocab(parts):
-        errors.append('词法分离违规：parts 数组中混入装配类型节点（component/connection 仅可出现在 assembly 字段）。')
-
     parts_ids = set()
     for node in parts:
         if isinstance(node, dict) and isinstance(node.get('id'), str):
@@ -38,16 +34,19 @@ def validate_intent(intent):
     if ground is not None and ground not in parts_ids:
         errors.append("ground '" + str(ground) + "' 未在 parts 中找到。")
 
+    # 词法分离：parts 数组不得混入装配类型节点
+    if _has_assembly_vocab(parts):
+        errors.append('词法分离违规：parts 数组中混入装配类型节点（component/connection 仅可出现在 assembly 字段）。')
+
     # material 仅 part 图（装配意图不得指定 material）
     material = intent.get('material')
     assembly = intent.get('assembly')
     if material is not None and assembly is not None:
         errors.append('material 仅限 part 图：装配图不允许指定 material。')
 
-    # part 图校验
     validate_part_graph(parts, errors)
 
     if assembly is not None:
-        validate_assembly(assembly, parts_ids, errors)
+        validate_assembly(assembly, parts_ids, ground, errors)
 
     return errors
