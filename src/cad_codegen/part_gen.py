@@ -4,7 +4,8 @@ from dataclasses import dataclass
 from build123d import (GridLocations, Location, Mode,
     Plane, PolarLocations, Vector, chamfer, extrude, fillet, mirror)
 from cad_codegen.profile import (
-    DATUM_LOCATIONS, EDGE_TOL, MIRROR_PLANE_TUP, THROUGH_MARGIN, _fmt,
+    DATUM_LOCATIONS, EDGE_TOL, MIRROR_PLANES, MIRROR_PLANE_TUP,
+    THROUGH_MARGIN, _fmt,
 )
 
 
@@ -323,3 +324,198 @@ def build_part(nodes):
                 _exec_pattern_block(item, part, amounts)
                 prev_sketch = None
     return part.part, amounts
+
+
+def _v(xyz):
+    return 'Vector(%s, %s, %s)' % tuple(_fmt(x) for x in xyz)
+
+
+def _emit_profile(profile):
+    """profile → 图元发射行列表。"""
+    if not profile:
+        raise CodegenError('profile 不能为空')
+    if all(p.get('kind') == 'line' for p in profile):
+        pts = _line_vertices(profile)
+        if len(pts) < 3:
+            raise CodegenError('line 轮廓至少需要 3 个顶点（闭合环）')
+        return ['Polygon(%s)' % ', '.join('(%s, %s)' % (_fmt(x), _fmt(y)) for x, y in pts)]
+    out = []
+    for p in profile:
+        kind = p.get('kind')
+        if kind == 'rectangle':
+            out.append('Rectangle(%s, %s)' % (_fmt(p['width']), _fmt(p['height'])))
+        elif kind == 'circle':
+            out.append('Circle(%s)' % _fmt(p['diameter'] / 2.0))
+        else:
+            raise CodegenError('v1 不支持草图图元 ' + str(kind))
+    return out
+
+
+def _emit_sketch(node, indent):
+    ref = node.get('ref') or {}
+    if ref.get('face') is not None:
+        raise CodegenError('v1 不支持 ref.face 面上草图')
+    datum = ref.get('datum', 'front')
+    off = ref.get('offset', 0.0)
+    tmpl = DATUM_LOCATIONS.get(datum)
+    if tmpl is None:
+        raise CodegenError('未知基准面 ' + str(datum))
+    lines = [indent + 'with BuildSketch(' + tmpl.format(off=_fmt(off)) + '):']
+    for line in _emit_profile(node.get('profile', [])):
+        lines.append(indent + '    ' + line)
+    return lines
+
+
+def _emit_extrude(node, indent, amounts):
+    op = node.get('operation', 'boss')
+    end = node.get('end', 'blind')
+    depth = node.get('depth')
+    if end == 'up_to_surface':
+        raise CodegenError('v1 不支持 extrude end=up_to_surface')
+    if end == 'mid_plane':
+        if not depth:
+            raise CodegenError('mid_plane 需要 depth')
+        return [indent + 'extrude(amount=%s, both=True)' % _fmt(depth)]
+    if end == 'through_all':
+        if op != 'cut':
+            raise CodegenError('v1 不支持 boss through_all')
+        amount = amounts.get(node['id'])
+        if amount is None:
+            raise CodegenError('through_all cut 缺少预计算深度（需先生成 build_part）')
+        return [indent + 'extrude(amount=%s, mode=Mode.SUBTRACT)' % _fmt(amount)]
+    if not depth:
+        raise CodegenError('blind 需要 depth')
+    if op == 'cut':
+        return [indent + 'extrude(amount=%s, mode=Mode.SUBTRACT)' % _fmt(depth)]
+    return [indent + 'extrude(amount=%s)' % _fmt(depth)]
+
+
+def _emit_round(node, indent):
+    ntype = node['type']
+    r = node.get('radius' if ntype == 'fillet' else 'distance')
+    edges = node.get('edges', [])
+    if len(edges) != 1:
+        raise CodegenError('v1 仅支持单个边锚点（' + ntype + '）')
+    lines = [
+        indent + ('_pick = [e for e in part_b.part.edges() '
+                  'if e.distance_to(%s) < %s]' % (_v(edges[0]['near']), _fmt(EDGE_TOL))),
+        indent + '_e = max(_pick, key=lambda e: e.length) if _pick else None',
+        indent + 'if _e is None:',
+        indent + '    raise RuntimeError("未找到' + ntype + '边")',
+    ]
+    if ntype == 'fillet':
+        lines.append(indent + 'fillet([_e], radius=%s)' % _fmt(r))
+    else:
+        lines.append(indent + 'chamfer([_e], length=%s)' % _fmt(r))
+    return lines
+
+
+def _emit_mirror(node, indent):
+    plane = node.get('plane') or {}
+    datum = plane.get('datum', 'front')
+    expr = MIRROR_PLANES.get(datum)
+    if expr is None:
+        raise CodegenError('未知镜像基准 ' + str(datum))
+    return [indent + 'mirror(about=' + expr + ')']
+
+
+def _emit_pattern_block(item, indent, amounts):
+    node = item['node']
+    sk = item['sketch']
+    ex = item['extrude']
+    ref = sk.get('ref') or {}
+    if ref.get('face') is not None:
+        raise CodegenError('v1 不支持 ref.face 面上草图')
+    datum = ref.get('datum', 'front')
+    off = ref.get('offset', 0.0)
+    tmpl = DATUM_LOCATIONS.get(datum)
+    if tmpl is None:
+        raise CodegenError('未知基准面 ' + str(datum))
+    lines = [indent + 'with BuildSketch(' + tmpl.format(off=_fmt(off)) + '):']
+    sub = indent + '    '
+    if node['type'] == 'linear_pattern':
+        direction = node.get('direction', 'x')
+        if direction == 'z':
+            raise CodegenError('v1 不支持 z 方向线性阵列')
+        spacing, count = node['spacing'], node['count']
+        loc_args = ('%s, 1, %d, 1' if direction == 'x' else '1, %s, 1, %d') % (_fmt(spacing), count)
+        lines.append(sub + 'with GridLocations(%s):' % loc_args)
+    else:
+        if node.get('radius') is None:
+            raise CodegenError('circular_pattern 需要 radius')
+        lines.append(sub + 'with PolarLocations(%s, %d):' % (_fmt(node['radius']), node['count']))
+    for line in _emit_profile(sk.get('profile', [])):
+        lines.append(sub + '    ' + line)
+    lines.extend(_emit_extrude(ex, indent, amounts))
+    return lines
+
+
+def _emit_node(node, indent, amounts):
+    ntype = node['type']
+    if ntype == 'sketch':
+        return _emit_sketch(node, indent)
+    if ntype == 'extrude':
+        return _emit_extrude(node, indent, amounts)
+    if ntype in ('fillet', 'chamfer'):
+        return _emit_round(node, indent)
+    if ntype == 'mirror':
+        return _emit_mirror(node, indent)
+    raise CodegenError('未知节点类型 ' + str(ntype))
+
+
+def _emit_joint(spec, indent):
+    label = spec.label
+    cls = spec.cls
+    if cls in ('RigidJoint', 'BallJoint'):
+        if spec.location is None:
+            raise CodegenError(cls + ' 需要 location')
+        (px, py, pz), (rx, ry, rz) = spec.location
+        return [indent + ("part_b.part.joints['%s'] = %s('%s', part_b.part, "
+                          'Location((%s, %s, %s), (%s, %s, %s)))') % (
+            label, cls, label, _fmt(px), _fmt(py), _fmt(pz), _fmt(rx), _fmt(ry), _fmt(rz))]
+    if cls in ('RevoluteJoint', 'LinearJoint', 'CylindricalJoint'):
+        if spec.axis is None:
+            raise CodegenError(cls + ' 需要 axis')
+        (px, py, pz), (dx, dy, dz) = spec.axis
+        return [indent + ("part_b.part.joints['%s'] = %s('%s', part_b.part, "
+                          'axis=Axis((%s, %s, %s), (%s, %s, %s)))') % (
+            label, cls, label, _fmt(px), _fmt(py), _fmt(pz), _fmt(dx), _fmt(dy), _fmt(dz))]
+    raise CodegenError('未知关节类 ' + cls)
+
+
+def emit_part_source(part_id, nodes, joint_specs, amounts=None):
+    """发射零件源码（交付物①）。amounts: {节点 id: through 深度}。"""
+    amounts = amounts or {}
+    lines = [
+        '# 由 AI-CAD 生成（交付物①：build123d 建模语言源码，可编辑）',
+        '# 零件：' + part_id,
+        'from build123d import (',
+        '    Axis, BuildPart, BuildSketch, Circle, GridLocations,',
+        '    Location, Mode, Plane, PolarLocations, Polygon, Rectangle,',
+        '    Unit, Vector, chamfer, export_step, extrude, fillet, mirror,',
+        '    BallJoint, CylindricalJoint, LinearJoint, RevoluteJoint, RigidJoint,',
+        ')',
+        '',
+        '',
+        'def build():',
+        '    with BuildPart() as part_b:',
+    ]
+    for item in _build_plan(nodes):
+        if item['op'] == 'node':
+            lines.extend(_emit_node(item['node'], '        ', amounts))
+        else:
+            lines.extend(_emit_pattern_block(item, '        ', amounts))
+    for spec in joint_specs:
+        lines.extend(_emit_joint(spec, '    '))
+    lines.append('    return part_b.part')
+    lines.append('')
+    lines.append('')
+    lines.append("if __name__ == '__main__':")
+    lines.append("    export_step(build(), '" + part_id + ".step', unit=Unit.M)")
+    return '\n'.join(lines) + '\n'
+
+
+def generate_part_source(part_id, nodes, joint_specs):
+    """生成零件源码：in-process 执行算 through 深度，再发射字符串。"""
+    _, amounts = build_part(nodes)
+    return emit_part_source(part_id, nodes, joint_specs, amounts)
