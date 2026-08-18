@@ -28,18 +28,32 @@ V1_NOT_SUPPORTED = {
     'line/circle 锚点': 'anchor.kind',
 }
 
-# 基准面 → BuildSketch 的 Location 表达式模板（{off} = 沿法向偏移，米）
-DATUM_LOCATIONS = {
-    'front': 'Location((0, 0, {off}))',
-    'top': 'Location((0, {off}, 0), (0, 90, 0))',
-    'right': 'Location(({off}, 0, 0), (0, 0, 90))',
-}
-
-
 def _fmt_coord(v):
     """坐标值 → 字符串：整数值输出为整数（镜像平面惯例），其余走 _fmt。"""
     v = float(v)
     return str(int(v)) if v.is_integer() else _fmt(v)
+
+
+# 基准面 → (偏移轴索引, 旋转欧拉角)：单一来源，发射模板与执行 Location 共用
+DATUM_LOCATION_TUP = {
+    'front': (2, (0, 0, 0)),
+    'top': (1, (0, 90, 0)),
+    'right': (0, (0, 0, 90)),
+}
+
+
+def _location_expr(off_axis, orientation):
+    """(偏移轴索引, 欧拉角) → 'Location(...)' 发射模板（{off} 占位符，欧拉角全零省略）。"""
+    coords = ['0', '0', '0']
+    coords[off_axis] = '{off}'
+    s = 'Location((' + ', '.join(coords) + ')'
+    if any(orientation):
+        s += ', (' + ', '.join(_fmt_coord(o) for o in orientation) + ')'
+    return s + ')'
+
+
+# 基准面 → BuildSketch 的 Location 表达式模板（{off} = 沿法向偏移，米）
+DATUM_LOCATIONS = {d: _location_expr(a, o) for d, (a, o) in DATUM_LOCATION_TUP.items()}
 
 
 def _plane_expr(origin, x_dir, normal):

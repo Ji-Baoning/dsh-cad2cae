@@ -27,6 +27,39 @@ def test_split_parts_unknown_ref():
         split_parts(PARTS, ['ghost'])
 
 
+def _split_cross_chain_parts():
+    """含跨链引用的 parts：f1(fillet 引用 n1) 位于 n1 之后、n2 之前。"""
+    return [
+        {'id': 's1', 'type': 'sketch', 'ref': {'datum': 'front'},
+         'profile': [{'kind': 'circle', 'diameter': 0.06}]},
+        {'id': 'n1', 'type': 'extrude', 'sketch': 's1', 'operation': 'boss',
+         'end': 'blind', 'depth': 0.08},
+        {'id': 'f1', 'type': 'fillet', 'feature': 'n1',
+         'edges': [{'near': [0.03, 0.03, 0.08]}], 'radius': 0.005},
+        {'id': 's2', 'type': 'sketch', 'ref': {'datum': 'front'},
+         'profile': [{'kind': 'rectangle', 'width': 0.06, 'height': 0.06}]},
+        {'id': 'n2', 'type': 'extrude', 'sketch': 's2', 'operation': 'boss',
+         'end': 'blind', 'depth': 0.02},
+    ]
+
+
+def test_split_parts_rejects_cross_chain_ref():
+    # f1 位于 n1 之后，按“归属其后最近 part_ref”会被切进 n2 的链，但其引用 n1
+    # 属上一零件链 → 必须响亮报错，而非静默生成错误几何。
+    parts = _split_cross_chain_parts()
+    with pytest.raises(CodegenError) as ei:
+        split_parts(parts, ['n1', 'n2'])
+    assert '不在同一零件链' in str(ei.value)
+
+
+def test_split_parts_tail_ref_no_cross_chain():
+    # 负向对照：part_ref 取各链末节点（f1、n2），引用全在链内 → 不报错。
+    parts = _split_cross_chain_parts()
+    chains = split_parts(parts, ['f1', 'n2'])
+    assert [n['id'] for n in chains['f1']] == ['s1', 'n1', 'f1']
+    assert [n['id'] for n in chains['n2']] == ['s2', 'n2']
+
+
 def test_build_part_hub_cylinder_volume():
     nodes = split_parts(PARTS, ['hn1'])['hn1']
     part, amounts = build_part(nodes)

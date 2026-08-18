@@ -7,7 +7,13 @@ def emit_assembly_source(assembly, components):
     comp_ref = {}
     for c in components:
         if isinstance(c, dict) and c.get('id'):
-            comp_ref[c['id']] = c.get('part_ref')
+            cid = c['id']
+            pref = c.get('part_ref')
+            if not pref:
+                # 有 id 却缺 part_ref：上游校验应已拦截，此处兜底响亮报错，
+                # 避免发射 import_module('None') 在子进程里失败得不明不白。
+                raise CodegenError('component ' + str(cid) + ' 缺少 part_ref')
+            comp_ref[cid] = pref
     lines = [
         '# 由 AI-CAD 生成（交付物①：装配建模语言源码）',
         'from importlib import import_module',

@@ -11,9 +11,14 @@ def test_fmt_cleans_floats():
 
 
 def test_datum_locations_templates():
-    assert '{off}' in profile.DATUM_LOCATIONS['front']
+    assert profile.DATUM_LOCATIONS['front'] == 'Location((0, 0, {off}))'
     assert profile.DATUM_LOCATIONS['top'] == 'Location((0, {off}, 0), (0, 90, 0))'
     assert profile.DATUM_LOCATIONS['right'] == 'Location(({off}, 0, 0), (0, 0, 90))'
+    # 发射模板与执行侧 Location 共用 DATUM_LOCATION_TUP 单一来源
+    assert set(profile.DATUM_LOCATIONS) == set(profile.DATUM_LOCATION_TUP)
+    assert profile.DATUM_LOCATION_TUP['front'] == (2, (0, 0, 0))
+    assert profile.DATUM_LOCATION_TUP['top'] == (1, (0, 90, 0))
+    assert profile.DATUM_LOCATION_TUP['right'] == (0, (0, 0, 90))
 
 
 def test_mirror_planes_cover_three_datums():

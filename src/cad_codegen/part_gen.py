@@ -4,8 +4,8 @@ from dataclasses import dataclass
 from build123d import (GridLocations, Location, Mode,
     Plane, PolarLocations, Vector, chamfer, extrude, fillet, mirror)
 from cad_codegen.profile import (
-    DATUM_LOCATIONS, EDGE_TOL, MIRROR_PLANES, MIRROR_PLANE_TUP,
-    THROUGH_MARGIN, _fmt,
+    DATUM_LOCATIONS, DATUM_LOCATION_TUP, EDGE_TOL, MIRROR_PLANES,
+    MIRROR_PLANE_TUP, THROUGH_MARGIN, _fmt,
 )
 
 
@@ -72,6 +72,21 @@ def split_parts(parts, part_refs):
                 break
         if owner is not None:
             result[owner].append(node)
+    # 校验：零件链内引用不得跨链（特征链不得跨零件引用；part_ref 应为链末节点）。
+    # 按数组顺序每个节点归属其后最近 part_ref，若某链内节点引用了另一链的节点，
+    # 说明意图违反了“特征链连续、part_ref 为链边界”的生成约定，必须响亮报错，
+    # 而非静默产生错误几何（如 fillet 错挂到下一零件、_exec_mirror 镜像错实体）。
+    all_ids = {n.get('id') for n in parts if isinstance(n, dict)}
+    for owner, chain in result.items():
+        in_chain = {n.get('id') for n in chain if isinstance(n, dict)}
+        for node in chain:
+            if not isinstance(node, dict):
+                continue
+            for ref in _refs_of(node):
+                if ref in all_ids and ref not in in_chain:
+                    raise CodegenError('节点 ' + str(node.get('id')) + ' 引用 ' + str(ref)
+                                       + ' 不在同一零件链（' + str(owner)
+                                       + '）：特征链不得跨零件引用，part_ref 应为各零件链末节点')
     return result
 
 
@@ -153,20 +168,24 @@ def _line_vertices(profile):
     return pts
 
 
+def _datum_location(datum, off):
+    """基准面 datum + 偏移 off → BuildSketch Location（单一来源，未知基准面报错）。"""
+    tup = DATUM_LOCATION_TUP.get(datum)
+    if tup is None:
+        raise CodegenError('未知基准面 ' + str(datum))
+    off_axis, orientation = tup
+    pos = [0.0, 0.0, 0.0]
+    pos[off_axis] = off
+    if any(orientation):
+        return Location(tuple(pos), orientation)
+    return Location(tuple(pos))
+
+
 def _exec_sketch(node, part):
     ref = node.get('ref') or {}
     if ref.get('face') is not None:
         raise CodegenError('v1 不支持 ref.face 面上草图')
-    datum = ref.get('datum', 'front')
-    off = ref.get('offset', 0.0)
-    if datum == 'front':
-        loc = Location((0, 0, off))
-    elif datum == 'top':
-        loc = Location((0, off, 0), (0, 90, 0))
-    elif datum == 'right':
-        loc = Location((off, 0, 0), (0, 0, 90))
-    else:
-        raise CodegenError('未知基准面 ' + str(datum))
+    loc = _datum_location(ref.get('datum', 'front'), ref.get('offset', 0.0))
     with bd.BuildSketch(loc) as sk:
         _exec_profile(node.get('profile', []))
     # build123d 0.11 作用域限制：helper 帧内创建的 BuildSketch 不会自动挂到外层
@@ -253,14 +272,7 @@ def _exec_pattern_block(item, part, amounts):
     ref = sk.get('ref') or {}
     if ref.get('face') is not None:
         raise CodegenError('v1 不支持 ref.face 面上草图')
-    datum = ref.get('datum', 'front')
-    off = ref.get('offset', 0.0)
-    if datum == 'front':
-        loc = Location((0, 0, off))
-    elif datum == 'top':
-        loc = Location((0, off, 0), (0, 90, 0))
-    else:
-        loc = Location((off, 0, 0), (0, 0, 90))
+    loc = _datum_location(ref.get('datum', 'front'), ref.get('offset', 0.0))
     with bd.BuildSketch(loc) as bs:
         if node['type'] == 'linear_pattern':
             direction = node.get('direction', 'x')
