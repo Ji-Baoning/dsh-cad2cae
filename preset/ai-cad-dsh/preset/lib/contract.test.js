@@ -4,9 +4,9 @@
 // 测试策略：expected 用"先测量后校验"（expected = measured）保证确定性 PASS，不硬编码体积。
 // 若 Plan A/B 未实现则 skip 并给出明确提示。
 //
-// 注意：本测试经 makeCtx 的 temp fs 把 REPO_ROOT 绝对路径重映射到临时目录，但 outDirFor 的
-// 真实路径（resolve(REPO_ROOT, 'cad-state', <id>, ...)）会落到仓库根 cad-state/ 下
-// （见 makeCtx 注释；实测 generate/compile 产物落在临时目录）。.gitignore 由控制器收尾处理。
+// 注意：本测试经 makeCtx 的 temp fs 处理状态读写，但 generate/compile 产物（Python 子进程
+// 的 out_dir）落在仓库根 cad-state/<workflow_id>/ 下的真实路径，existence 检查直接 stat 这些
+// 文件（见下方 resolve(REPO, a)）；该目录已被根 .gitignore 忽略、由控制器收尾清理。
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, statSync } from 'node:fs';

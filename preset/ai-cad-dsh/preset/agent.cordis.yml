@@ -250,10 +250,10 @@
     fetch: false
     searchTimeoutMs: 60000
 
-# ── SolidWorks WLJ ──────────────────────────────────────────────────────────
+# ── AI-CAD ─────────────────────────────────────────────────────────────────
 
-# 本地插件（相对路径，随 preset 目录走）：注册 WLJ 技能提示词段与 14 个 wlj_* 工具。
-# 自包含、不依赖本机路径；状态经 fs 持久化；C# 执行/分析走 subprocess+curl。
+# 本地插件（相对路径，随 preset 目录走）：注册 AI-CAD 工作流提示词段与 22 个 cad_* 工具。
+# 状态经 fs 持久化（cad-state/）；Python 后端（build123d+OCCT）经 subprocess 调用。
 - id: ai-cad-skill
   name: ./ai-cad-plugin.js
   config:
