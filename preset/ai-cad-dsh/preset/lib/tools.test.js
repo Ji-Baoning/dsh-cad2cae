@@ -52,3 +52,30 @@ test('cad_attach_intent 拒绝非法 intent（INTENT_INVALID 门禁）', async (
     intent: { schema_version: 2, units: 'inches', parts: [] },
   }), /INTENT_INVALID/);
 });
+
+test('cad_edit_parameter 门禁与 re-arm', async () => {
+  const ctx = makeCtx({ baseDir: tempBase(), python: 'python3' });
+  const tools = Object.fromEntries(makeTools({ python: 'python3' }).map(t => [t.name, t]));
+  const withL2 = (status) => ({ ...answeredIntake('wf-1'), status, levels: { L2: structuredClone(L2) } });
+
+  // compiled → 改参成功，re-arm 到 approved_for_execution，L2 修改落盘，note 提示重新生成。
+  await writeState(ctx, null, withL2('compiled'));
+  const r = await tools.cad_edit_parameter.execute(ctx, { workflow_id: 'wf-1', node_id: 'hn1', field: 'depth', value: 0.01 });
+  assert.equal(r.ok, true);
+  assert.equal(r.status, 'approved_for_execution');
+  assert.match(r.note, /cad_generate_code/);
+  const back = await tools.cad_get_state.execute(ctx, { workflow_id: 'wf-1' });
+  assert.equal(back.status, 'approved_for_execution');
+  const saved = JSON.parse(await ctx.get('fs').readText('cad-state/wf-1/state.json'));
+  assert.equal(saved.levels.L2.parts.find(n => n.id === 'hn1').depth, 0.01);
+
+  // execution_failed → 必须先 cad_prepare_retry 确认清理。
+  await writeState(ctx, null, withL2('execution_failed'));
+  await assert.rejects(() => tools.cad_edit_parameter.execute(ctx, { workflow_id: 'wf-1', node_id: 'hn1', field: 'depth', value: 0.02 }),
+    /NEED_PREPARE_RETRY/);
+
+  // verified → 已交付不可改参。
+  await writeState(ctx, null, withL2('verified'));
+  await assert.rejects(() => tools.cad_edit_parameter.execute(ctx, { workflow_id: 'wf-1', node_id: 'hn1', field: 'depth', value: 0.02 }),
+    /EDIT_NOT_ALLOWED/);
+});
