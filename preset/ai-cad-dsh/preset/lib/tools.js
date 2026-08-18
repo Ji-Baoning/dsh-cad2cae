@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import {
   newState, answer, approveBrief, attachPlan, attachIntent, approvePlan,
   approveExecution, approveDelivery, prepareRetry, latestIntentFile,
-  loadState, saveState, mutate, resolveStatePath, DEFAULT_POINTER,
+  loadState, saveState, DEFAULT_POINTER,
 } from './state.js';
 import { openQuestions, allRequiredAnswered } from './questions.js';
 import {
@@ -173,11 +173,12 @@ export function makeTools(config) {
         // 状态机流程：attachIntent → validateIntent（错误抛 INTENT_INVALID）→ 写 intent 文件 → saveState。
         const st = await needs(ctx, args);
         const next = attachIntent(st, args.level, args.intent);
-        const errors = await validateIntent(ctx, configStatePath, args.intent);
-        if (errors && errors.length > 0) throw new Error('INTENT_INVALID: ' + errors.join('; '));
+        // validateIntent 解析为 { errors: [...] } 对象：解包后再做门禁，否则 .length 为 undefined、门禁永不触发。
+        const { errors = [] } = await validateIntent(ctx, configStatePath, args.intent);
+        if (errors.length > 0) throw new Error('INTENT_INVALID: ' + errors.join('; '));
         await writeIntentFile(ctx, args, next);
         await save(ctx, args, next);
-        return { level: args.level, status: next.status, errors: errors || [], next: nextAction(next) };
+        return { level: args.level, status: next.status, errors, next: nextAction(next) };
       } },
 
     { name: 'cad_approve_execution', description: '批准执行（要求 L2 已 attach）',
@@ -226,7 +227,7 @@ export function makeTools(config) {
         const path = args.step_path || resolve(REPO_ROOT, 'cad-state', st.workflow_id, 'assembly.step');
         const r = await measureStep(ctx, configStatePath, path);
         if (!r.ok) throw new Error('MEASURE_FAILED: ' + r.error);
-        return { measured: r.measured };
+        return { ok: true, measured: r.measured };
       } },
 
     { name: 'cad_modify', description: '记录修改请求（提示 LLM 更新 L2 后重新 attach）',

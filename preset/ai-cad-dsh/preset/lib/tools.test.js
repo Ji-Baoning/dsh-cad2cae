@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { makeTools, setParameter, nextAction } from './tools.js';
-import { makeCtx, tempBase, writeState, answeredIntake, L0, L1, L2 } from './test/support.js';
+import { makeCtx, tempBase, writeState, answeredIntake, L2 } from './test/support.js';
 
 test('恰好 22 个工具且 name 唯一', () => {
   const tools = makeTools({ python: 'python3' });
@@ -39,4 +39,16 @@ test('setParameter 修改/抛错', () => {
   const out = setParameter(intent, { node_id: 'hn1', field: 'depth', value: 0.01 });
   assert.equal(out.parts.find(n => n.id === 'hn1').depth, 0.01);
   assert.throws(() => setParameter(intent, { node_id: 'nope', field: 'x', value: 1 }), /PARAM_NOT_FOUND/);
+});
+
+test('cad_attach_intent 拒绝非法 intent（INTENT_INVALID 门禁）', async () => {
+  const ctx = makeCtx({ baseDir: tempBase(), python: 'python3' });
+  const tools = Object.fromEntries(makeTools({ python: 'python3' }).map(t => [t.name, t]));
+  const base = answeredIntake('wf-1');
+  // status=plan_attached、attached_level/approved_level=-1（answeredIntake 默认）：L0 attach 合法。
+  await writeState(ctx, base, { ...base, status: 'plan_attached', plan: 'p' });
+  await assert.rejects(() => tools.cad_attach_intent.execute(ctx, {
+    workflow_id: 'wf-1', level: 'L0',
+    intent: { schema_version: 2, units: 'inches', parts: [] },
+  }), /INTENT_INVALID/);
 });
