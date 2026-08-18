@@ -1,4 +1,14 @@
 """意图层 JSON 的常量表（受限特征子集 + 装配词汇）。"""
+import re
+
+# 标识符格式：part/component/connection 的 id 会被无转义插值进生成的 Python 源码
+# （字符串字面量、dict 键、import_module 模块名）与文件名，必须限定为合法 Python
+# 标识符，否则可逃出字符串字面量注入任意语句、或借 ../ 写出 out_dir（路径穿越）。
+IDENTIFIER_RE = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
+
+
+def is_identifier(s):
+    return bool(IDENTIFIER_RE.match(s))
 
 # part 词汇（受限特征子集；revolve/sweep/loft/rib/钣金明确不支持）
 NODE_TYPES = frozenset({

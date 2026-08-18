@@ -61,7 +61,10 @@ export function makeCtx({ baseDir, python }) {
       const stderrLimit = stdio.stderr.collect.limit;
       let result;
       try {
-        result = await exec(argv[0], argv.slice(1), { encoding: 'utf8' });
+        // 最终审查（C1）：转发 opts.cwd —— 与生产 DSH harness 一致。此前 mock 忽略 cwd，
+        // 子进程继承 node 的 cwd，使 backend_cli.py 的 os.getcwd() 偏离仓库根，artifacts
+        // 变成 ../../cad-state/... 的错位路径。mock 必须镜像生产行为。
+        result = await exec(argv[0], argv.slice(1), { encoding: 'utf8', cwd: opts.cwd });
         result.code = 0;
       } catch (e) {
         result = { stdout: e.stdout || '', stderr: e.stderr || String(e.message), code: e.code };

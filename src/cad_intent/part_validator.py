@@ -2,7 +2,7 @@
 
 from cad_intent.schema import (
     DATUMS, EXTRUDE_ENDS, EXTRUDE_OPERATIONS, FEATURE_PRODUCERS,
-    NODE_TYPES, PATTERN_DIRECTIONS, PROFILE_KINDS,
+    NODE_TYPES, PATTERN_DIRECTIONS, PROFILE_KINDS, is_identifier,
 )
 from cad_intent.graph import _is_finite, check_datum, check_profile_prim, check_sketch_ref
 
@@ -29,6 +29,10 @@ def validate_part_graph(parts, errors):
             errors.append(where + '.id 必填（非空字符串）。')
         elif nid in seen:
             errors.append(where + ".id '" + nid + "' 重复。")
+        elif not is_identifier(nid):
+            # I1（最终审查）：part id 被直接插值进源码字符串与文件名，必须为合法标识符，
+            # 否则可注入语句或路径穿越（见 schema.IDENTIFIER_RE）。
+            errors.append(where + ".id '" + nid + "' 必须是合法标识符（[A-Za-z_][A-Za-z0-9_]*）。")
         if ntype not in NODE_TYPES:
             errors.append(where + ".type '" + str(ntype) + "' 不是已注册的 part 类型（"
                           + '|'.join(sorted(NODE_TYPES)) + '）。')

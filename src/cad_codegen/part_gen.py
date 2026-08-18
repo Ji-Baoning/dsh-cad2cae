@@ -48,8 +48,10 @@ def split_parts(parts, part_refs):
     """按零件边界把扁平 parts 数组切分为 {part_ref: [节点链]}。
 
     约定：各零件特征链在 parts 数组中连续排布，part_ref 为各链边界节点 id；
-    每个节点归属它之后最近的 part_ref（节点 index ≤ part_ref index），
-    越过最后一个 part_ref 的尾部节点不属于任何零件。返回 dict（按数组顺序）。
+    每个节点归属它之后最近的 part_ref（节点 index ≤ part_ref index）。
+    越过最后一个 part_ref 的尾部节点不属于任何零件 → 响亮报错（最终审查 I2：
+    静默丢弃会产生"缺一段几何"的 STEP 而不报错，是 CAD 工具最危险的失败模式，
+    应让 LLM 修正 part_ref，而非产出少几何的交付物）。返回 dict（按数组顺序）。
     """
     if not part_refs:
         return {}
@@ -70,8 +72,11 @@ def split_parts(parts, part_refs):
             if ref_pos[pref] >= i:
                 owner = pref
                 break
-        if owner is not None:
-            result[owner].append(node)
+        if owner is None:
+            raise CodegenError('节点 ' + str(node.get('id')) + ' 位于最后一个 part_ref（'
+                               + str(order[-1]) + '）之后，不属于任何零件链：'
+                               + 'part_ref 应为各零件链末节点')
+        result[owner].append(node)
     # 校验：零件链内引用不得跨链（特征链不得跨零件引用；part_ref 应为链末节点）。
     # 按数组顺序每个节点归属其后最近 part_ref，若某链内节点引用了另一链的节点，
     # 说明意图违反了“特征链连续、part_ref 为链边界”的生成约定，必须响亮报错，

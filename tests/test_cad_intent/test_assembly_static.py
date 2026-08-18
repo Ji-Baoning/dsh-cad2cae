@@ -19,6 +19,38 @@ def test_component_must_reference_part():
     assert any('part_ref' in e and 'ghost' in e for e in errs)
 
 
+def test_component_id_must_be_identifier():
+    # I1（最终审查）：component id 插值进装配源码（parts['%s']/joints['%s']），须为合法标识符。
+    intent = _intent({
+        'components': [{'id': "c1'", 'part_ref': 'hub'}],
+        'connections': [],
+    })
+    errs = validate_intent(intent)
+    assert any('合法标识符' in e for e in errs)
+
+
+def test_part_ref_must_be_identifier():
+    # I1（最终审查）：part_ref 决定生成模块名（import_module('%s') 与 '<name>.py'），须为合法标识符。
+    intent = _intent({
+        'components': [{'id': 'c1', 'part_ref': 'hub/x'}],
+        'connections': [],
+    })
+    errs = validate_intent(intent)
+    assert any('合法标识符' in e and 'part_ref' in e for e in errs)
+
+
+def test_connection_id_must_be_identifier():
+    # I1（最终审查）：连接 id 插值进 joints['%s'] 键，须为合法标识符。
+    intent = _intent({
+        'components': [{'id': 'c1', 'part_ref': 'hub'}],
+        'connections': [{'id': "J1'", 'type': 'static',
+                         'contact': [{'part': 'c1', 'anchor': {'kind': 'plane', 'near': [0, 0, 0]}}],
+                         'position': {'x': 0, 'y': 0, 'z': 0}, 'method': 'weld'}],
+    })
+    errs = validate_intent(intent)
+    assert any('合法标识符' in e for e in errs)
+
+
 def test_component_ok():
     intent = _intent({
         'components': [{'id': 'c1', 'part_ref': 'hub'}],

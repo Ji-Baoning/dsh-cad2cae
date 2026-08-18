@@ -1,7 +1,8 @@
 """子进程编译测试：交付物② STEP 文件从交付物①源码导出。"""
 import os
+import pytest
 from cad_codegen import compile_sources
-from cad_codegen.part_gen import generate_part_source
+from cad_codegen.part_gen import CodegenError, generate_part_source
 
 HUB_NODES = [
     {'id': 's1', 'type': 'sketch', 'ref': {'datum': 'front'},
@@ -26,3 +27,11 @@ def test_compile_reports_failure(tmp_path):
     assert res.steps[0][0] == 'bad'
     assert res.steps[0][1] is False
     assert 'SyntaxError' in res.steps[0][2]
+
+
+def test_compile_rejects_non_identifier_module(tmp_path):
+    # I1（最终审查）纵深防御：模块名直接用于 os.path.join(out_dir, name + '.py') 与
+    # 子进程执行，含 '/'、'..' 的名称必须拒绝（否则写出 out_dir 之外或执行任意路径脚本）。
+    with pytest.raises(CodegenError) as ei:
+        compile_sources({'../evil': 'x = 1\n'}, str(tmp_path))
+    assert '合法 Python 标识符' in str(ei.value)

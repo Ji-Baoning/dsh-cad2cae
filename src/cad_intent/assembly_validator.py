@@ -2,7 +2,7 @@
 
 from cad_intent.schema import (
     ANCHOR_KINDS, CONNECTION_TYPES, JOINT_CONTACT_KINDS, JOINT_DIRECTION_FLAGS,
-    JOINT_TYPES, STATIC_METHODS,
+    JOINT_TYPES, STATIC_METHODS, is_identifier,
 )
 from cad_intent.assembly_graph import check_connectivity
 
@@ -87,10 +87,18 @@ def validate_assembly(assembly, parts_ids, ground_part, errors):
         if not (isinstance(cid, str) and cid):
             errors.append(where + '.id 必填（非空字符串）。')
             continue
+        if not is_identifier(cid):
+            # I1（最终审查）：component id 插值进装配源码（parts['%s']、joints['%s']），
+            # 必须为合法标识符，否则可逃出字符串字面量注入语句（见 schema.IDENTIFIER_RE）。
+            errors.append(where + ".id '" + cid + "' 必须是合法标识符（[A-Za-z_][A-Za-z0-9_]*）。")
         comp_ids.add(cid)
         pref = comp.get('part_ref')
         if not (isinstance(pref, str) and pref):
             errors.append(where + ".part_ref（part 图节点 id）必填。")
+        elif not is_identifier(pref):
+            # I1：part_ref 决定生成模块名（import_module('%s') 与 '<name>.py' 文件名），
+            # 必须为合法标识符，否则可注入或路径穿越。
+            errors.append(where + ".part_ref '" + str(pref) + "' 必须是合法标识符（[A-Za-z_][A-Za-z0-9_]*）。")
         elif pref not in parts_ids:
             errors.append(where + ".part_ref '" + str(pref) + "' 未在 parts 中找到。")
 
@@ -103,6 +111,11 @@ def validate_assembly(assembly, parts_ids, ground_part, errors):
         if ctype not in CONNECTION_TYPES:
             errors.append(where + ": 'type' 必须是 static|kinematic（got '" + str(ctype) + "'）。")
             continue
+        # I1（最终审查）：连接 id 插值进装配源码的 joints['%s'] 键，必须为合法标识符；
+        # 缺失时 codegen 用空 label 会在子进程响亮失败，无需在此强制必填。
+        cid = conn.get('id')
+        if cid is not None and not (isinstance(cid, str) and is_identifier(cid)):
+            errors.append(where + ".id '" + str(cid) + "' 必须是合法标识符（[A-Za-z_][A-Za-z0-9_]*）。")
 
         contact = conn.get('contact')
         if not (isinstance(contact, list) and len(contact) >= 1):

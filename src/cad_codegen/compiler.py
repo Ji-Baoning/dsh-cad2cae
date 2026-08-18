@@ -1,7 +1,15 @@
 """子进程编译：交付物①源码 → 交付物② STEP 文件。"""
 import os
+import re
 import subprocess
 from dataclasses import dataclass, field
+
+from cad_codegen.part_gen import CodegenError
+
+# I1（最终审查）纵深防御：模块名直接用于 os.path.join(out_dir, name + '.py') 与
+# 子进程 python name.py，若含 '/'、'..' 可写出 out_dir 或执行任意路径脚本。
+# Plan A 已把 part_ref 限定为合法标识符，此守卫兜底任何绕过校验的调用方。
+_IDENTIFIER_RE = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
 
 
 @dataclass
@@ -18,6 +26,9 @@ def compile_sources(sources, out_dir, python='python3'):
     """
     os.makedirs(out_dir, exist_ok=True)
     for name, src in sources.items():
+        if not _IDENTIFIER_RE.match(name):
+            raise CodegenError("模块名 '" + str(name) + "' 不是合法 Python 标识符"
+                               + "（[A-Za-z_][A-Za-z0-9_]*），拒绝写出文件")
         with open(os.path.join(out_dir, name + '.py'), 'w', encoding='utf-8') as f:
             f.write(src)
     steps = []

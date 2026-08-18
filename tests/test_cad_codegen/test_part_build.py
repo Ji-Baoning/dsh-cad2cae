@@ -27,6 +27,16 @@ def test_split_parts_unknown_ref():
         split_parts(PARTS, ['ghost'])
 
 
+def test_split_parts_trailing_node_raises():
+    # I2（最终审查）：越过最后一个 part_ref 的尾部节点必须响亮报错，而非静默丢弃
+    # （静默丢弃会产出"缺一段几何"的 STEP 而不报错，是 CAD 工具最危险的失败模式）。
+    parts = PARTS + [{'id': 'orphan', 'type': 'extrude', 'sketch': 'hs1',
+                      'operation': 'cut', 'end': 'through_all'}]
+    with pytest.raises(CodegenError) as ei:
+        split_parts(parts, ['hn1', 'pn1'])
+    assert '不属于任何零件链' in str(ei.value)
+
+
 def _split_cross_chain_parts():
     """含跨链引用的 parts：f1(fillet 引用 n1) 位于 n1 之后、n2 之前。"""
     return [
@@ -61,7 +71,8 @@ def test_split_parts_tail_ref_no_cross_chain():
 
 
 def test_build_part_hub_cylinder_volume():
-    nodes = split_parts(PARTS, ['hn1'])['hn1']
+    # 只切 hub 单链（I2 后 split_parts 要求全部节点被认领，故传 PARTS[:2] 而非整表）
+    nodes = split_parts(PARTS[:2], ['hn1'])['hn1']
     part, amounts = build_part(nodes)
     expected = math.pi * 0.03 ** 2 * 0.08
     assert part.volume == pytest.approx(expected, rel=1e-3)

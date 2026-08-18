@@ -52,9 +52,13 @@ def cmd_compile(backend_dir, payload, out_dir):
     # generate_sources 生成源码字典，再编译（而非直接把 intent 传给编译）。
     sources = generate_sources(payload)
     result = compile_sources(sources, out_dir=out_dir)
-    # A5: artifacts 为 dict {name: STEP 绝对路径}；relpath 基准 = 进程 CWD（仓库根），
-    # 使 artifacts 为仓库相对路径（如 cad-state/<wf>/hn1.step），供 JS 侧 resolve(REPO_ROOT, a)。
-    artifacts = [os.path.relpath(a, os.getcwd()) for a in result.artifacts.values()]
+    # A5（最终审查修订）：artifacts 为 dict {name: STEP 绝对路径}；relpath 基准 = backend_dir
+    # 的父目录（= 仓库根，backend.js 恒传 REPO_ROOT/src），而非进程 CWD。原实现依赖子进程
+    # CWD == 仓库根，一旦宿主忽略 cwd 选项（测试 mock 曾如此）即产出 ../../cad-state/... 的
+    # 错位路径。改为从 backend_dir 推导仓库根后，artifacts 恒为仓库相对路径，供 JS 侧
+    # resolve(REPO_ROOT, a)。
+    repo_root = os.path.dirname(os.path.abspath(backend_dir))
+    artifacts = [os.path.relpath(a, repo_root) for a in result.artifacts.values()]
     return {"ok": result.ok, "steps": result.steps, "artifacts": artifacts}
 
 

@@ -12,6 +12,16 @@ def test_empty_sketch_profile():
     assert any('profile' in e and '非空数组' in e for e in errs)
 
 
+def test_part_id_must_be_identifier():
+    # I1（最终审查）：part id 被无转义插值进源码字符串与文件名，
+    # 含引号/路径分隔符/数字开头的 id 必须被 Plan A 拒绝，否则可注入语句或路径穿越。
+    for bad in ["x';print(1)", 'a/b', '1abc', 'my-part']:
+        intent = _intent([{'id': bad, 'type': 'sketch',
+                           'profile': [{'kind': 'circle', 'diameter': 0.1}]}])
+        errs = validate_intent(intent)
+        assert any('合法标识符' in e for e in errs), bad
+
+
 def test_bad_profile_kind():
     intent = _intent([{'id': 's1', 'type': 'sketch', 'profile': [{'kind': 'triangle'}]}])
     errs = validate_intent(intent)
