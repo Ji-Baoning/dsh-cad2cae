@@ -1,10 +1,10 @@
 // preset/ai-cad-dsh/preset/lib/test/support.js
 // 测试支撑：temp-dir fs + 真实 execFile subprocess + 层级意图夹具（A9 裁定版）。
 //
-// 关键约定（A11/A6 裁定后）：tools.js 内所有 cad-state 路径都以 REPO_ROOT 绝对路径形式出现
-// （如 resolve(REPO_ROOT, 'cad-state', <id>, 'state.json')）。本 mock 的 fs 把以 REPO_ROOT
-// 为前缀的绝对路径重映射到 baseDir（临时目录），使全部文件操作在 temp 内完成、绝不触碰真实仓库，
-// 同时保持与生产路径语义一致；相对路径（如 DEFAULT_POINTER 'cad-state/current.json'）也落在 baseDir 下。
+// 关键约定（A11/A6 + 最终审查裁定后）：tools.js 经 fs 服务的路径均为仓库相对路径
+// （如 join('cad-state', <id>, 'state.json')、DEFAULT_POINTER 'cad-state/current.json'），
+// 由 fs.resolve 落位；仅 Python 子进程（argv）使用 REPO_ROOT 绝对路径。
+// 本 mock 的 fs 把相对路径解析到 baseDir（临时目录）下，使全部文件操作在 temp 内完成、绝不触碰真实仓库。
 // 另外在 ctx 上注入 baseDir，供 writeState 使用（tools.test.js 直接把"已答 intake 的 state"传入
 // writeState 第二个参数，见下）。
 import { mkdtempSync, writeFileSync, readFileSync, realpathSync } from 'node:fs';

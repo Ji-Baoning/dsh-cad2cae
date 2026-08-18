@@ -69,7 +69,7 @@ export function nextAction(state) {
     case 'compiled':
       return '请 cad_verify_execution（提供 expected 契约）';
     case 'execution_failed':
-      return '请 cad_prepare_retry（确认清理）后重试，或 cad_edit_parameter 修改意图';
+      return '请 cad_prepare_retry（确认清理）后重试；修改意图需先 cad_prepare_retry 再 cad_edit_parameter';
     case 'verified':
       return '请 cad_approve_delivery 完成交付';
     case 'completed':
