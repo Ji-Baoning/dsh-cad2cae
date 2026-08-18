@@ -47,8 +47,11 @@ def cmd_generate(backend_dir, payload, out_dir):
 
 
 def cmd_compile(backend_dir, payload, out_dir):
-    _, _, compile_sources = _import_plans(backend_dir)
-    result = compile_sources(payload, out_dir=out_dir)
+    _, generate_sources, compile_sources = _import_plans(backend_dir)
+    # compile_sources 接收的是 {模块名: 源码字符串} 字典，先由 intent 经
+    # generate_sources 生成源码字典，再编译（而非直接把 intent 传给编译）。
+    sources = generate_sources(payload)
+    result = compile_sources(sources, out_dir=out_dir)
     # A5: artifacts 为 dict {name: STEP 绝对路径}；relpath 基准 = 进程 CWD（仓库根），
     # 使 artifacts 为仓库相对路径（如 cad-state/<wf>/hn1.step），供 JS 侧 resolve(REPO_ROOT, a)。
     artifacts = [os.path.relpath(a, os.getcwd()) for a in result.artifacts.values()]
