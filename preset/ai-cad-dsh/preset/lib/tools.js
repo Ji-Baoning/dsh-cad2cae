@@ -4,7 +4,7 @@
 // 裁定落地：A6（cad_measure 默认路径 = cad-state/<id>/assembly.step）、
 // A10（setParameter 在 parts 数组中按 node.id 查找）、A11（cad_start_workflow 先写
 // cad-state/<id>/state.json 再写指针文件）。
-import { resolve, dirname } from 'node:path';
+import { resolve, join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   newState, answer, approveBrief, attachPlan, attachIntent, approvePlan,
@@ -21,7 +21,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, '..', '..', '..', '..');
 
 function statePathFor(args) {
-  return args.workflow_id ? resolve(REPO_ROOT, 'cad-state', args.workflow_id, 'state.json') : DEFAULT_POINTER;
+  // 仓库相对路径（wlj 同款）：fs 服务把相对路径解析到工作区根（resolveStatePath 已路由）。
+  return args.workflow_id ? join('cad-state', args.workflow_id, 'state.json') : DEFAULT_POINTER;
 }
 function outDirFor(args) {
   const id = args.workflow_id || 'default';
@@ -29,7 +30,7 @@ function outDirFor(args) {
 }
 function intentPathFor(args, state) {
   const id = args.workflow_id || 'default';
-  return resolve(REPO_ROOT, 'cad-state', id, latestIntentFile(state));
+  return join('cad-state', id, latestIntentFile(state));
 }
 
 const SIM = (name) => ({ name, description: `CAE 仿真插槽（预留）：${name}。Phase 1 未实现。`,
@@ -62,12 +63,13 @@ export function nextAction(state) {
     case 'plan_approved':
       return '请 cad_attach_intent L1 / L2；L2 就绪后 cad_approve_execution';
     case 'approved_for_execution':
-    case 'generated':
       return '请 cad_generate_code → cad_compile → cad_measure → cad_verify_execution';
+    case 'generated':
+      return '请 cad_compile → cad_measure → cad_verify_execution';
     case 'compiled':
       return '请 cad_verify_execution（提供 expected 契约）';
     case 'execution_failed':
-      return '请 cad_prepare_retry（确认清理）后重试，或 cad_modify 修改意图';
+      return '请 cad_prepare_retry（确认清理）后重试，或 cad_edit_parameter 修改意图';
     case 'verified':
       return '请 cad_approve_delivery 完成交付';
     case 'completed':
@@ -107,9 +109,9 @@ export function makeTools(config) {
         // A11 裁定：状态写到 cad-state/<workflow_id>/state.json（fs.writeText 自动建父目录），
         // 再写指针文件；避免状态落进 current.json 而指针指向从未写入的路径（后续 NO_WORKFLOW）。
         const st = newState(args.request, { workflow_id: args.workflow_id });
-        const statePath = resolve(REPO_ROOT, 'cad-state', st.workflow_id, 'state.json');
+        const statePath = statePathFor(st);
         await saveState(ctx.get('fs'), statePath, st);
-        await ctx.get('fs').writeText(resolve(REPO_ROOT, DEFAULT_POINTER),
+        await ctx.get('fs').writeText(DEFAULT_POINTER,
           JSON.stringify({ workflow_id: st.workflow_id, state_path: statePath }, null, 2));
         return { workflow_id: st.workflow_id, status: st.status, next: nextAction(st) };
       } },
@@ -236,18 +238,25 @@ export function makeTools(config) {
         const st = await needs(ctx, args);
         const next = { ...st, pending_modification: { instruction: args.instruction, target: args.target, at: new Date().toISOString() } };
         await save(ctx, args, next);
-        return { status: 'accepted', note: '已记录。请修改 L2 意图并 cad_attach_intent level=L2 后重新生成。' };
+        return { status: 'accepted', note: '已记录修改请求。修改 L2 请用 cad_edit_parameter；已交付工作流请新建（cad_start_workflow）。' };
       } },
 
     { name: 'cad_edit_parameter', description: '参数化改参（改 L2 意图后需重新生成）',
       parameters: { type: 'object', properties: { workflow_id: { type: 'string' }, node_id: { type: 'string' }, field: { type: 'string' }, value: {}, profile_index: { type: 'number' } }, required: ['node_id', 'field', 'value'] },
       async execute(ctx, args) {
         const st = await needs(ctx, args);
+        // 最终审查：改参门禁 — 仅 approved_for_execution / generated / compiled 可改；
+        // execution_failed 需先 cad_prepare_retry 确认清理；verified/completed 已交付不可改。
+        if (st.status === 'execution_failed') throw new Error('NEED_PREPARE_RETRY: 请先 cad_prepare_retry 确认清理');
+        if (st.status === 'verified' || st.status === 'completed') throw new Error('EDIT_NOT_ALLOWED: 工作流已交付；如需改参请新建工作流');
+        if (st.status !== 'approved_for_execution' && st.status !== 'generated' && st.status !== 'compiled') {
+          throw new Error('EDIT_NOT_ALLOWED: 当前状态 ' + st.status + ' 不可改参');
+        }
         if (!st.levels.L2) throw new Error('NO_L2_INTENT');
         const newL2 = setParameter(structuredClone(st.levels.L2), args);
-        const next = { ...st, levels: { ...st.levels, L2: newL2 } };
+        const next = { ...st, status: 'approved_for_execution', levels: { ...st.levels, L2: newL2 } };
         await save(ctx, args, next);
-        return { ok: true, updated: newL2, note: '请 cad_generate_code 重新生成（L2 已更新）。' };
+        return { ok: true, status: next.status, updated: newL2, note: 'L2 已更新并重新武装执行；请 cad_generate_code 重新生成。' };
       } },
 
     { name: 'cad_verify_execution', description: '对照契约校验 STEP 交付物',
