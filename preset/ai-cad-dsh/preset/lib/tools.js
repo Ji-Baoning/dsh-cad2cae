@@ -256,7 +256,11 @@ export function makeTools(config) {
         const st = await needs(ctx, args);
         if (st.status !== 'compiled' && st.status !== 'generated') throw new Error('NEED_COMPILE');
         const artifacts = (st.delivery && st.delivery.artifacts) || [];
-        const step_paths = artifacts.filter(a => a.endsWith('.step')).map(a => resolve(REPO_ROOT, a));
+        // A12: 装配工作流中 assembly.step 已是包含全部零件的主交付物，
+        // 若与零件 .step 一起校验会被后端求和重复计数（体积/面数翻倍），故只校验 assembly.step。
+        const step_paths = (artifacts.some(a => a.endsWith('assembly.step'))
+          ? artifacts.filter(a => a.endsWith('assembly.step'))
+          : artifacts.filter(a => a.endsWith('.step'))).map(a => resolve(REPO_ROOT, a));
         const r = await verifyExecution(ctx, configStatePath, { step_paths, expected: args.expected });
         const next = r.passed && r.verdict === 'PASS'
           ? { ...st, status: 'verified', delivery: { ...(st.delivery || {}), verified: r.measured } }
