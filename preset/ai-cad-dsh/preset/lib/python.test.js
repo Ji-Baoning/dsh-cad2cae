@@ -21,8 +21,9 @@ function makeSubprocess() {
         result.code = e.code;
       }
       const collected = {
-        stdout: { readFrom: async () => (result.stdout || '').slice(0, stdoutLimit) },
-        stderr: { readFrom: async () => (result.stderr || '').slice(0, stderrLimit) },
+        // 真实 dsh subprocess 契约：readFrom(0) 返回 { text, nextOffset, lossy } 对象。
+        stdout: { readFrom: async () => ({ text: (result.stdout || '').slice(0, stdoutLimit), nextOffset: 0, lossy: false }) },
+        stderr: { readFrom: async () => ({ text: (result.stderr || '').slice(0, stderrLimit), nextOffset: 0, lossy: false }) },
       };
       return { done: Promise.resolve({ exitCode: result.code === undefined ? 0 : result.code }), collected };
     },

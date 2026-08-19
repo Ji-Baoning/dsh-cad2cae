@@ -34,7 +34,7 @@ function intentPathFor(args, state) {
 }
 
 const SIM = (name) => ({ name, description: `CAE 仿真插槽（预留）：${name}。Phase 1 未实现。`,
-  parameters: { type: 'object', properties: { workflow_id: { type: 'string' } } },
+  parameters: { workflow_id: { type: 'string' } },
   async execute() { return { status: 'SIMULATION_NOT_IMPLEMENTED', message: `${name} 属于 CAE（Phase 2），Phase 1 仅 CAD 生成。` }; } });
 
 export function setParameter(intent, { node_id, field, value, profile_index }) {
@@ -89,13 +89,16 @@ export function makeTools(config) {
   const writeIntentFile = async (ctx, args, st) => {
     const level = 'L' + st.attached_level;
     const intent = st.levels[level];
-    await ctx.get('fs').writeText(intentPathFor(args, st), JSON.stringify(intent, null, 2));
+    // 真实 dsh fs 契约：writeText 只收 resolve() 后的 target 对象（历史 bug：直传字符串路径
+    // 导致 Cannot read properties of undefined (reading 'trim')）。
+    const fs = ctx.get('fs');
+    await fs.writeText(await fs.resolve(intentPathFor(args, st)), JSON.stringify(intent, null, 2));
   };
   const configStatePath = { ...config };
 
   const tools = [
     { name: 'cad_environment_profile', description: '报告 AI-CAD 环境能力、受限特征子集、双交付物与单位约定',
-      parameters: { type: 'object', properties: {} },
+      parameters: {},
       async execute() {
         return { plugin: 'ai-cad-dsh', deliverables: ['build123d 源码', '编辑态 STEP（米）'],
           feature_subset: 'sketch: rectangle/circle/line/arc/ellipse/spline; extrude boss/cut; fillet/chamfer; linear/circular_pattern; mirror; 装配: static/kinematic',
@@ -104,45 +107,54 @@ export function makeTools(config) {
       } },
 
     { name: 'cad_start_workflow', description: '新建工作流并返回 workflow_id',
-      parameters: { type: 'object', properties: { request: { type: 'string' } }, required: ['request'] },
+      parameters: { request: { type: 'string' , required: true } },
       async execute(ctx, args) {
         // A11 裁定：状态写到 cad-state/<workflow_id>/state.json（fs.writeText 自动建父目录），
         // 再写指针文件；避免状态落进 current.json 而指针指向从未写入的路径（后续 NO_WORKFLOW）。
         const st = newState(args.request, { workflow_id: args.workflow_id });
         const statePath = statePathFor(st);
         await saveState(ctx.get('fs'), statePath, st);
-        await ctx.get('fs').writeText(DEFAULT_POINTER,
+        // 先 resolve 得 target 对象再写指针（真实 dsh fs 契约，见 writeIntentFile 注）。
+        const fs = ctx.get('fs');
+        await fs.writeText(await fs.resolve(DEFAULT_POINTER),
           JSON.stringify({ workflow_id: st.workflow_id, state_path: statePath }, null, 2));
         return { workflow_id: st.workflow_id, status: st.status, next: nextAction(st) };
       } },
 
     { name: 'cad_get_state', description: '读取工作流状态摘要',
-      parameters: { type: 'object', properties: { workflow_id: { type: 'string' } } },
+      parameters: { workflow_id: { type: 'string' } },
       async execute(ctx, args) {
         const st = await needs(ctx, args);
+        // open_questions：把当前待答提问（id/label/hint/options）直接给模型，避免模型翻源码猜 id。
         return { workflow_id: st.workflow_id, status: st.status, request: st.request,
           answers: st.answers, plan: st.plan, attached_level: st.attached_level,
           approved_level: st.approved_level, latest_intent: latestIntentFile(st),
-          delivery: st.delivery, last_error: st.last_error, next: nextAction(st) };
+          delivery: st.delivery, last_error: st.last_error,
+          open_questions: openQuestions(st), next: nextAction(st) };
       } },
 
     { name: 'cad_next_action', description: '返回下一步建议',
-      parameters: { type: 'object', properties: { workflow_id: { type: 'string' } } },
-      async execute(ctx, args) { const st = await needs(ctx, args); return { status: st.status, next: nextAction(st) }; } },
+      parameters: { workflow_id: { type: 'string' } },
+      async execute(ctx, args) {
+        const st = await needs(ctx, args);
+        return { status: st.status, open_questions: openQuestions(st), next: nextAction(st) };
+      } },
 
     { name: 'cad_answer_question', description: '回答 intake 或 plan 提问',
-      parameters: { type: 'object', properties: { workflow_id: { type: 'string' }, id: { type: 'string' }, value: { type: 'string' } }, required: ['id', 'value'] },
+      parameters: { workflow_id: { type: 'string' }, id: { type: 'string' , required: true }, value: { type: 'string' , required: true } },
       async execute(ctx, args) {
         const st = await needs(ctx, args);
         const qs = openQuestions(st);
-        if (!qs.some(q => q.id === args.id)) throw new Error('UNKNOWN_QUESTION');
+        if (!qs.some(q => q.id === args.id)) {
+          throw new Error('UNKNOWN_QUESTION: 可用提问 id：' + qs.map(q => q.id).join(', '));
+        }
         const next = answer(st, args.id, args.value);
         await save(ctx, args, next);
         return { id: args.id, value: args.value, all_required: allRequiredAnswered(next, qs) };
       } },
 
     { name: 'cad_approve_brief', description: '批准需求简报（intake 齐全后）',
-      parameters: { type: 'object', properties: { workflow_id: { type: 'string' } } },
+      parameters: { workflow_id: { type: 'string' } },
       async execute(ctx, args) {
         const st = await needs(ctx, args);
         if (!allRequiredAnswered(st, openQuestions(st))) throw new Error('INTAKE_INCOMPLETE');
@@ -152,7 +164,7 @@ export function makeTools(config) {
       } },
 
     { name: 'cad_attach_plan', description: '提交构建计划文本',
-      parameters: { type: 'object', properties: { workflow_id: { type: 'string' }, plan: { type: 'string' } }, required: ['plan'] },
+      parameters: { workflow_id: { type: 'string' }, plan: { type: 'string' , required: true } },
       async execute(ctx, args) {
         const st = await needs(ctx, args);
         const next = attachPlan(st, args.plan);
@@ -161,7 +173,7 @@ export function makeTools(config) {
       } },
 
     { name: 'cad_approve_plan', description: '批准当前 attach 的意图层',
-      parameters: { type: 'object', properties: { workflow_id: { type: 'string' } } },
+      parameters: { workflow_id: { type: 'string' } },
       async execute(ctx, args) {
         const st = await needs(ctx, args);
         const next = approvePlan(st);
@@ -170,7 +182,7 @@ export function makeTools(config) {
       } },
 
     { name: 'cad_attach_intent', description: 'attach 一层意图（L0/L1/L2），写 intent JSON 并校验',
-      parameters: { type: 'object', properties: { workflow_id: { type: 'string' }, level: { type: 'string' }, intent: { type: 'object' } }, required: ['level', 'intent'] },
+      parameters: { workflow_id: { type: 'string' }, level: { type: 'string' , required: true }, intent: { type: 'object', additionalProperties: true, required: true } },
       async execute(ctx, args) {
         // 状态机流程：attachIntent → validateIntent（错误抛 INTENT_INVALID）→ 写 intent 文件 → saveState。
         const st = await needs(ctx, args);
@@ -184,7 +196,7 @@ export function makeTools(config) {
       } },
 
     { name: 'cad_approve_execution', description: '批准执行（要求 L2 已 attach）',
-      parameters: { type: 'object', properties: { workflow_id: { type: 'string' } } },
+      parameters: { workflow_id: { type: 'string' } },
       async execute(ctx, args) {
         const st = await needs(ctx, args);
         const next = approveExecution(st);
@@ -193,7 +205,7 @@ export function makeTools(config) {
       } },
 
     { name: 'cad_generate_code', description: '由 L2 意图生成 build123d 源码',
-      parameters: { type: 'object', properties: { workflow_id: { type: 'string' } } },
+      parameters: { workflow_id: { type: 'string' } },
       async execute(ctx, args) {
         const st = await needs(ctx, args);
         if (st.status !== 'approved_for_execution') throw new Error('NEED_APPROVE_EXECUTION: 请先 cad_approve_execution');
@@ -208,7 +220,7 @@ export function makeTools(config) {
       } },
 
     { name: 'cad_compile', description: '编译生成 STEP（OCCT 子进程）',
-      parameters: { type: 'object', properties: { workflow_id: { type: 'string' } } },
+      parameters: { workflow_id: { type: 'string' } },
       async execute(ctx, args) {
         const st = await needs(ctx, args);
         if (st.status !== 'generated') throw new Error('NEED_GENERATE');
@@ -222,7 +234,7 @@ export function makeTools(config) {
       } },
 
     { name: 'cad_measure', description: '测量一个 STEP 文件（体数/体积/面积/质心/水密）',
-      parameters: { type: 'object', properties: { workflow_id: { type: 'string' }, step_path: { type: 'string' } } },
+      parameters: { workflow_id: { type: 'string' }, step_path: { type: 'string' } },
       async execute(ctx, args) {
         const st = await needs(ctx, args);
         // A6 裁定：默认路径 = cad-state/<workflow_id>/assembly.step（STEP 平铺在 out_dir，不在 parts/ 下）。
@@ -233,7 +245,7 @@ export function makeTools(config) {
       } },
 
     { name: 'cad_modify', description: '记录修改请求（提示 LLM 更新 L2 后重新 attach）',
-      parameters: { type: 'object', properties: { workflow_id: { type: 'string' }, instruction: { type: 'string' }, target: { type: 'string' } }, required: ['instruction'] },
+      parameters: { workflow_id: { type: 'string' }, instruction: { type: 'string' , required: true }, target: { type: 'string' } },
       async execute(ctx, args) {
         const st = await needs(ctx, args);
         const next = { ...st, pending_modification: { instruction: args.instruction, target: args.target, at: new Date().toISOString() } };
@@ -242,7 +254,7 @@ export function makeTools(config) {
       } },
 
     { name: 'cad_edit_parameter', description: '参数化改参（改 L2 意图后需重新生成）',
-      parameters: { type: 'object', properties: { workflow_id: { type: 'string' }, node_id: { type: 'string' }, field: { type: 'string' }, value: {}, profile_index: { type: 'number' } }, required: ['node_id', 'field', 'value'] },
+      parameters: { workflow_id: { type: 'string' }, node_id: { type: 'string' , required: true }, field: { type: 'string' , required: true }, value: { type: 'json', required: true }, profile_index: { type: 'number' } },
       async execute(ctx, args) {
         const st = await needs(ctx, args);
         // 最终审查：改参门禁 — 仅 approved_for_execution / generated / compiled 可改；
@@ -260,7 +272,7 @@ export function makeTools(config) {
       } },
 
     { name: 'cad_verify_execution', description: '对照契约校验 STEP 交付物',
-      parameters: { type: 'object', properties: { workflow_id: { type: 'string' }, expected: { type: 'object' } }, required: ['expected'] },
+      parameters: { workflow_id: { type: 'string' }, expected: { type: 'object', additionalProperties: true, required: true } },
       async execute(ctx, args) {
         const st = await needs(ctx, args);
         if (st.status !== 'compiled' && st.status !== 'generated') throw new Error('NEED_COMPILE');
@@ -279,7 +291,7 @@ export function makeTools(config) {
       } },
 
     { name: 'cad_approve_delivery', description: '确认交付',
-      parameters: { type: 'object', properties: { workflow_id: { type: 'string' } } },
+      parameters: { workflow_id: { type: 'string' } },
       async execute(ctx, args) {
         const st = await needs(ctx, args);
         const next = approveDelivery(st, { delivered_at: new Date().toISOString() });
@@ -288,7 +300,7 @@ export function makeTools(config) {
       } },
 
     { name: 'cad_prepare_retry', description: '失败后清理并回到可执行态',
-      parameters: { type: 'object', properties: { workflow_id: { type: 'string' }, cleanup_confirmed: { type: 'boolean' }, reason: { type: 'string' } }, required: ['cleanup_confirmed'] },
+      parameters: { workflow_id: { type: 'string' }, cleanup_confirmed: { type: 'boolean' , required: true }, reason: { type: 'string' } },
       async execute(ctx, args) {
         const st = await needs(ctx, args);
         const next = prepareRetry(st, args.cleanup_confirmed === true, args.reason || '');
@@ -297,7 +309,7 @@ export function makeTools(config) {
       } },
 
     { name: 'cad_health_check', description: '后端健康检查（Python/OCP）',
-      parameters: { type: 'object', properties: {} },
+      parameters: {},
       async execute(ctx) { return await healthCheck(ctx, configStatePath); } },
 
     SIM('cad_simulate_setup'),

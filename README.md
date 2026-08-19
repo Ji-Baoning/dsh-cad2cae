@@ -15,13 +15,21 @@ CAD 工程师和设计团队希望直接从自然语言需求得到可编辑的 
 **安装与测试**：
 
 ```bash
-python -m pytest -q                    # Python 套件：109 passed
+python -m pytest -q                    # Python 套件：117 passed
 cd preset/ai-cad-dsh
 npm install                            # 测试依赖（lib/*.js 本身零依赖）
-npm test                               # Node 套件：25 passed
+npm test                               # Node 套件：31 passed
 ```
 
-**作为 DSH preset 使用**：将 `preset/ai-cad-dsh/preset/` 下的 `preset.yml`、`agent.cordis.yml`、`ai-cad-plugin.js` 装入 DeepSeek Harness，会话选择 **AI-CAD**。插件默认按仓库内布局定位 `src/`；装入外部目录时需在 Config 显式指定 `backendDir`。
+**作为 DSH preset 使用**：运行安装脚本，把预设装入 DSH 本地预设根，并自动改写副本的 `backendDir` 指向本仓库 `src/`、在副本内建立 `node_modules/@deepseek-ai/{dsh-tools,schemastery}` 符号链接（指向 harness 安装内的同名包——插件入口的 `import '@deepseek-ai/dsh-tools'` 依赖它解析）：
+
+```bash
+node install-dsh-preset.mjs            # 幂等安装到 ~/.dsh/.agent-presets/ai-cad/（已就绪则直接提示）
+node install-dsh-preset.mjs --force    # 覆盖重装
+node install-dsh-preset.mjs --dry-run  # 预检（只打印将做什么，不写盘）
+```
+
+脚本遵守 DSH 的 home 解析（`$DSH_HOME` 优先，默认 `~/.dsh`），支持 `--id <id>` 自定义预设 id；仓库源文件保持原样，复制时排除测试与缓存文件。找不到 dsh harness 时会警告并给出手动建链接的命令。安装后 DSH 会话选择 **AI-CAD** 即可（22 个 `cad_*` 工具）；**若 dsh web 进程曾加载过失败版本的预设，需重启 dsh web 后再选择**（Node 的 ESM 失败导入会按路径缓存，改名入口也只能绕开一次）。
 
 **后端 CLI 直调**：
 

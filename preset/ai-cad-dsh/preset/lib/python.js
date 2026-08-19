@@ -25,11 +25,13 @@ export async function runPython(ctx, { argv, cwd, stdoutLimit = 8388608, stderrL
     graceMs,
   });
   const { exitCode } = await handle.done;
-  const stdout = await handle.collected.stdout.readFrom(0);
-  const stderr = await handle.collected.stderr.readFrom(0);
+  // 真实 dsh subprocess 契约：readFrom(0) 返回 { text, nextOffset, lossy } 对象而非字符串，
+  // 必须取 .text（历史 bug：直接当字符串用导致 stdout.slice is not a function）。
+  const out = (await handle.collected.stdout.readFrom(0)).text;
+  const err = (await handle.collected.stderr.readFrom(0)).text;
   if (exitCode !== 0) {
-    const detail = (stderr || stdout || '').trim().slice(0, 2000);
-    throw new BackendError('BACKEND_EXIT_' + exitCode, detail, { exitCode, stderr, stdout });
+    const detail = (err || out || '').trim().slice(0, 2000);
+    throw new BackendError('BACKEND_EXIT_' + exitCode, detail, { exitCode, stderr: err, stdout: out });
   }
-  return stdout;
+  return out;
 }

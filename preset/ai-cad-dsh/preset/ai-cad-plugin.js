@@ -1,7 +1,7 @@
 // preset/ai-cad-dsh/preset/ai-cad-plugin.js
 // DSH 插件入口：唯一引入 @deepseek-ai 的文件。注册系统提示 + 22 个工具。
 import { defineTool } from '@deepseek-ai/dsh-tools';
-import { z } from '@deepseek-ai/schemastery';
+import z from '@deepseek-ai/schemastery';
 import { registerTools } from './lib/register.js';
 
 export const name = 'AI-CAD';
@@ -31,7 +31,12 @@ export function apply(ctx, config) {
     name: t.name,
     description: t.description,
     parameters: t.parameters,
-    output: { schema: { type: 'string' }, render() { return ''; } },
+    // output.render 的返回值就是模型看到的 tool-result 内容（dsh-tools createSuccessResult）。
+    // 历史 bug：render() 无条件 return ''，使模型拿不到任何工具结果（session 里 tool-result content 为空）。
+    // wlj 参照插件的标准写法：返回 [{ type: 'text', text }] 内容块。
+    output: { schema: { type: 'string' }, render(_args, value) {
+      return [{ type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value, null, 2) }];
+    } },
     async execute(args) {
       const result = await t.execute(ctx, args || {});
       return JSON.stringify(result, null, 2);

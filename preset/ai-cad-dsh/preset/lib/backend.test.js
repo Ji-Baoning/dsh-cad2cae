@@ -11,6 +11,7 @@ import { BackendError } from './python.js';
 const REPO = resolve(import.meta.dirname, '..', '..', '..', '..');
 
 // canned-output 假 subprocess：记录每次 spawn 的 argv/cwd，stdout 返回固定内容。
+// readFrom 返回真实 dsh 契约的 { text, nextOffset, lossy } 对象（历史 bug：runPython 未取 .text）。
 function makeCapturingSubprocess(stdout = '{}') {
   const calls = [];
   return {
@@ -18,8 +19,8 @@ function makeCapturingSubprocess(stdout = '{}') {
     async spawn(opts) {
       calls.push({ argv: opts.argv, cwd: opts.cwd });
       const collected = {
-        stdout: { readFrom: async () => stdout },
-        stderr: { readFrom: async () => '' },
+        stdout: { readFrom: async () => ({ text: stdout, nextOffset: 0, lossy: false }) },
+        stderr: { readFrom: async () => ({ text: '', nextOffset: 0, lossy: false }) },
       };
       return { done: Promise.resolve({ exitCode: 0 }), collected };
     },

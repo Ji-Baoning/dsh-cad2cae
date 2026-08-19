@@ -4,6 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { makeTools, setParameter, nextAction } from './tools.js';
 import { makeCtx, tempBase, writeState, answeredIntake, L2 } from './test/support.js';
+import { INTAKE_QUESTIONS, PLAN_QUESTIONS } from './questions.js';
 
 test('恰好 22 个工具且 name 唯一', () => {
   const tools = makeTools({ python: 'python3' });
@@ -53,6 +54,25 @@ test('cad_attach_intent 拒绝非法 intent（INTENT_INVALID 门禁）', async (
   }), /INTENT_INVALID/);
 });
 
+test('cad_get_state / cad_next_action 暴露 open_questions（模型无需翻源码猜提问 id）', async () => {
+  const ctx = makeCtx({ baseDir: tempBase(), python: 'python3' });
+  const tools = Object.fromEntries(makeTools({ python: 'python3' }).map(t => [t.name, t]));
+  const base = answeredIntake('wf-1');
+
+  // awaiting_confirmation → 返回 9 条 intake 提问（id/label/hint/options 完整）。
+  await writeState(ctx, null, base);
+  const st = await tools.cad_get_state.execute(ctx, { workflow_id: 'wf-1' });
+  assert.deepEqual(st.open_questions.map(q => q.id), INTAKE_QUESTIONS.map(q => q.id));
+  assert.ok(st.open_questions[0].label && st.open_questions[0].id === 'product_name');
+  const na = await tools.cad_next_action.execute(ctx, { workflow_id: 'wf-1' });
+  assert.deepEqual(na.open_questions.map(q => q.id), INTAKE_QUESTIONS.map(q => q.id));
+
+  // 进入 plan_attached → 换成 4 条 plan 提问。
+  await writeState(ctx, null, { ...base, status: 'plan_attached', plan: 'p' });
+  const st2 = await tools.cad_get_state.execute(ctx, { workflow_id: 'wf-1' });
+  assert.deepEqual(st2.open_questions.map(q => q.id), PLAN_QUESTIONS.map(q => q.id));
+});
+
 test('cad_edit_parameter 门禁与 re-arm', async () => {
   const ctx = makeCtx({ baseDir: tempBase(), python: 'python3' });
   const tools = Object.fromEntries(makeTools({ python: 'python3' }).map(t => [t.name, t]));
@@ -66,7 +86,7 @@ test('cad_edit_parameter 门禁与 re-arm', async () => {
   assert.match(r.note, /cad_generate_code/);
   const back = await tools.cad_get_state.execute(ctx, { workflow_id: 'wf-1' });
   assert.equal(back.status, 'approved_for_execution');
-  const saved = JSON.parse(await ctx.get('fs').readText('cad-state/wf-1/state.json'));
+  const saved = JSON.parse(await ctx.get('fs').readText(await ctx.get('fs').resolve('cad-state/wf-1/state.json')));
   assert.equal(saved.levels.L2.parts.find(n => n.id === 'hn1').depth, 0.01);
 
   // execution_failed → 必须先 cad_prepare_retry 确认清理。

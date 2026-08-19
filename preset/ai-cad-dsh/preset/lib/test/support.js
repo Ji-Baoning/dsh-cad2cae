@@ -30,14 +30,19 @@ export function tempBase() {
 export function makeCtx({ baseDir, python }) {
   // 统一映射：REPO_ROOT 绝对路径 → baseDir 相对；其余路径 → baseDir 下。所有 fs 方法都过这一层，
   // 因此调用方无论传原始绝对路径还是已 resolve 的路径，读写都落在临时目录。
+  // 镜像真实 dsh fs 服务契约：resolve() 返回 { targetKey, displayPath } 目标对象，
+  // readText/writeText 只接受 resolve() 的产物——"字符串直传 writeText"这类真实运行时 bug
+  // （Cannot read properties of undefined (reading 'trim')）必须在测试里就爆出来。
+  const toPath = (p) => (p && typeof p === 'object' && typeof p.targetKey === 'string') ? p.targetKey : p;
   const map = (p) => {
-    const rel = typeof p === 'string' && p.startsWith(REPO_ROOT)
-      ? p.slice(REPO_ROOT.length).replace(/^[/\\]+/, '')
-      : p;
+    const path = toPath(p);
+    const rel = typeof path === 'string' && path.startsWith(REPO_ROOT)
+      ? path.slice(REPO_ROOT.length).replace(/^[/\\]+/, '')
+      : path;
     return resolve(baseDir, rel);
   };
   const fs = {
-    resolve: (p) => map(p),
+    resolve: (p) => ({ targetKey: map(p), displayPath: map(p) }),
     async stat(p) {
       try {
         const s = await import('node:fs/promises').then(m => m.stat(map(p)));
@@ -46,13 +51,21 @@ export function makeCtx({ baseDir, python }) {
         return null;
       }
     },
-    async readText(p) { return readFileSync(map(p), 'utf8'); },
+    async readText(p) {
+      if (!p || typeof p !== 'object' || typeof p.targetKey !== 'string') {
+        throw new TypeError('fs.readText 需要 resolve() 后的 target 对象（真实 dsh 契约）');
+      }
+      return readFileSync(map(p), 'utf8');
+    },
     async writeText(p, text) {
+      if (!p || typeof p !== 'object' || typeof p.targetKey !== 'string') {
+        throw new TypeError('fs.writeText 需要 resolve() 后的 target 对象（真实 dsh 契约）');
+      }
       const { mkdirSync, writeFileSync } = await import('node:fs');
       mkdirSync(dirname(map(p)), { recursive: true });
       writeFileSync(map(p), text, 'utf8');
     },
-    processPath: (p) => p,
+    processPath: (p) => toPath(p),
   };
   const subprocess = {
     async spawn(opts) {
@@ -70,8 +83,9 @@ export function makeCtx({ baseDir, python }) {
         result = { stdout: e.stdout || '', stderr: e.stderr || String(e.message), code: e.code };
       }
       const collected = {
-        stdout: { readFrom: async () => (result.stdout || '').slice(0, stdoutLimit) },
-        stderr: { readFrom: async () => (result.stderr || '').slice(0, stderrLimit) },
+        // 真实 dsh subprocess 契约：readFrom(0) 返回 { text, nextOffset, lossy } 对象。
+        stdout: { readFrom: async () => ({ text: (result.stdout || '').slice(0, stdoutLimit), nextOffset: 0, lossy: false }) },
+        stderr: { readFrom: async () => ({ text: (result.stderr || '').slice(0, stderrLimit), nextOffset: 0, lossy: false }) },
       };
       return { done: Promise.resolve({ exitCode: result.code }), collected };
     },
@@ -84,8 +98,10 @@ export function makeCtx({ baseDir, python }) {
 // （其携带 workflow_id），故目录统一取 ctx.baseDir（makeCtx 注入），state 取第三个参数。
 export async function writeState(ctx, base, state) {
   const dir = ctx.baseDir || (typeof base === 'string' ? base : tempBase());
-  await ctx.get('fs').writeText(
-    join(dir, 'cad-state', state.workflow_id, 'state.json'),
+  const fs = ctx.get('fs');
+  // 真实 dsh 契约：writeText 只收 resolve() 后的 target 对象。
+  await fs.writeText(
+    await fs.resolve(join(dir, 'cad-state', state.workflow_id, 'state.json')),
     JSON.stringify(state, null, 2),
   );
 }
