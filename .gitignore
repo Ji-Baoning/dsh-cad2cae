@@ -11,3 +11,5 @@ sample/
 docs/
 .coverage
 cad-state/
+preset/ai-cad-dsh/web/dist/
+preset/ai-cad-dsh/web/src/generated/
