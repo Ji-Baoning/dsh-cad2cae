@@ -72,10 +72,15 @@ export async function linkWebPackage(home, force = false) {
 
 /** 向 cordis.patch.yml 追加 - insert 条目（幂等；entryId 已存在则原样返回）。 */
 export function appendPluginPatch(text, entryId = WEB_ENTRY_ID, pkgName = WEB_PKG_NAME) {
-  if (text.includes(`- id: ${entryId}`)) return text;
-  const block = `\n# ${pkgName} — 3D 预览客户端插件（Plan B 安装脚本注入）\n- insert:\n    - id: ${entryId}\n      name: '${pkgName}'\n`;
-  // 去掉文本末尾的尾随换行，再以空行接 block，避免残留双空行
-  return text.replace(/\n*$/, '') + block;
+  // dsh 首次创建 profile 时 cordis.patch.yml 自带 `[]` 空数组占位符：直接追加会得到
+  // `[]` + `- insert:` 两个顶层文档粘连（YAML 解析失败：end of the stream）。先统一移除
+  // 占位符行，再按条目是否已存在决定追加或跳过——自愈"占位符 + 条目并存"的坏状态。
+  const placeholder = /^[ \t]*\[\][ \t]*(?:\r?\n|$)/m;
+  const withoutPlaceholder = text.replace(placeholder, '');
+  if (withoutPlaceholder.includes(`- id: ${entryId}`)) return withoutPlaceholder;
+  const block = `# ${pkgName} — 3D 预览客户端插件（Plan B 安装脚本注入）\n- insert:\n    - id: ${entryId}\n      name: '${pkgName}'\n`;
+  // 非占位符（既有内容已是顶层块列表）：追加一个条目，规范化尾随换行避免残留双空行。
+  return withoutPlaceholder.replace(/\n*$/, '') + '\n' + block;
 }
 
 /** 完整安装：构建 + 链接 + patch。profile 目录自足创建；patch 缺失按空串容忍。 */

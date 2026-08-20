@@ -62,7 +62,10 @@ def test_append_patch_shape_and_idempotence_via_probe():
         "import { appendPluginPatch } from './install-web-plugin.mjs';\n"
         "const once = appendPluginPatch('# patch\\n[]\\n');\n"
         "const twice = appendPluginPatch(once);\n"
-        "process.stdout.write(JSON.stringify({ once, twice, same: once === twice }));\n"
+        # 坏状态：占位符 `[]` 与条目并存（旧版安装器直接追加的产物）→ 自愈为规范形态
+        "const broken = once.replace('# @ai-cad', '[]\\n# @ai-cad', 1);\n"
+        "const healed = appendPluginPatch(broken);\n"
+        "process.stdout.write(JSON.stringify({ once, twice, same: once === twice, healed }));\n"
     )
     res = subprocess.run(
         ["node", "--input-type=module", "-e", probe],
@@ -78,6 +81,10 @@ def test_append_patch_shape_and_idempotence_via_probe():
     assert f"name: '{WEB_PKG_NAME}'" in once
     # 原文本尾随换行被规范化：追加块前不留多余空行
     assert "\n\n\n" not in once
+    # dsh 默认占位符 `[]` 须被移除：`[]` + `- insert:` 是两文档粘连，YAML 解析失败
+    assert "[]" not in once, "占位符 [] 未被移除——dsh web 将报 end of the stream"
+    # 坏状态（占位符与条目并存，旧版安装器直接追加的产物）自愈为与全新安装一致的规范形态
+    assert data["healed"] == once, "已坏 patch 未自愈为规范形态"
 
 
 def test_install_creates_profile_and_link_and_patch(tmp_path):
