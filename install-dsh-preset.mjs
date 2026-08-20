@@ -12,6 +12,8 @@
 //   node install-dsh-preset.mjs --force     删除已装目录后全新复制
 //   node install-dsh-preset.mjs --id <id>   自定义预设 id（默认 ai-cad）
 //   node install-dsh-preset.mjs --dry-run   只打印将要做什么，不写盘
+//   node install-dsh-preset.mjs --no-web    跳过 3D 预览客户端插件安装
+//   node install-dsh-preset.mjs --no-patch  跳过 harness text-only 补丁（show_image 依赖，默认应用）
 //   node install-dsh-preset.mjs --help
 //
 // DSH home 解析顺序与 dsh-home-paths 一致：$DSH_HOME（非空白）优先，否则 ~/.dsh。
@@ -245,12 +247,13 @@ async function requireFile(dir, name) {
 class UsageError extends Error {}
 
 function parseArgs(argv) {
-  const opts = { id: DEFAULT_ID, force: false, dryRun: false, help: false, noWeb: false };
+  const opts = { id: DEFAULT_ID, force: false, dryRun: false, help: false, noWeb: false, noPatch: false };
   for (let i = 0; i < argv.length; i++) {
     switch (argv[i]) {
       case '--force': opts.force = true; break;
       case '--dry-run': opts.dryRun = true; break;
       case '--no-web': opts.noWeb = true; break;
+      case '--no-patch': opts.noPatch = true; break;
       case '--help':
       case '-h': opts.help = true; break;
       case '--id':
@@ -276,6 +279,7 @@ function printHelp() {
   --force        目标已存在时删除后全新复制（默认幂等）
   --dry-run      只打印将执行的动作，不写盘
   --no-web       跳过 web 客户端插件安装（默认安装）
+  --no-patch     跳过 harness text-only 补丁（show_image 依赖，默认应用）
   --help         显示本帮助
 
 说明：
@@ -284,6 +288,8 @@ function printHelp() {
   · 自动改写已装副本 agent.cordis.yml 的 backendDir 为本仓库 src/ 绝对路径。
   · 自动把已装副本 node_modules/@deepseek-ai/{dsh-tools,schemastery} 链接到
     harness 安装内的同名包（插件 import 需要）；找不到 dsh 时给出手动修复提示。
+  · 自动对 DeepSeek 适配器应用 text-only 补丁（show_image 把图显示到对话的前置条件），
+    幂等自愈（已打则跳过、harness 升级后源串不匹配则警告不写坏）；--no-patch 可跳过。
   · 仓库源文件保持原样（不改动）；复制时排除测试与缓存文件。`);
 }
 
@@ -311,6 +317,13 @@ async function main(argv) {
   const depsLabel = deps
     ? `将建立 node_modules/@deepseek-ai/{dsh-tools,schemastery} 链接 → ${dirname(deps['dsh-tools'])}`
     : '未找到 dsh harness（将跳过 node_modules 链接，并给出手动修复提示）';
+  // deps['dsh-tools'] = <cur>/node_modules/@deepseek-ai/dsh-tools → 三重 dirname = <cur>（含 node_modules 的包根）。
+  const harnessRoot = deps ? dirname(dirname(dirname(deps['dsh-tools']))) : null;
+  const patchLabel = opts.noPatch
+    ? '--no-patch：跳过 harness text-only 补丁'
+    : harnessRoot
+      ? `将应用 harness text-only 补丁 → ${join(harnessRoot, 'node_modules', '@deepseek-ai', 'dsh-llm-deepseek', 'lib', 'index.js')}`
+      : '未找到 dsh harness（将跳过 text-only 补丁）';
 
   let state;
   try {
@@ -333,6 +346,7 @@ async function main(argv) {
     console.log(`[dry-run] 目标目录：${target}`);
     console.log(`[dry-run] backendDir：${backend}`);
     console.log(`[dry-run] node_modules：${depsLabel}`);
+    console.log(`[dry-run] harness 补丁：${patchLabel}`);
     console.log(`[dry-run] 当前状态：${stateLabel}`);
     console.log(`[dry-run] 动作：${action}`);
     return 0;
@@ -366,7 +380,7 @@ async function main(argv) {
   console.log(`位置：${target}`);
   console.log(`backendDir：${backend}`);
   console.log(`node_modules：${deps ? '已链接 harness 依赖（dsh-tools/schemastery）' : '未链接（见上方警告）'}`);
-  console.log('DSH 中：新会话选择 AI-CAD 即可使用 22 个 cad_* 工具。');
+  console.log('DSH 中：新会话选择 AI-CAD 即可使用 24 个工具（23 个 cad_* + show_image）。');
   console.log('提示：若 dsh web 已运行过失败导入，请重启 dsh web 后再选择 AI-CAD。');
   console.log(`卸载：rm -rf ${target}`);
 
@@ -375,6 +389,23 @@ async function main(argv) {
     const { installWebPlugin } = await import('./install-web-plugin.mjs');
     const web = await installWebPlugin(home, { force: opts.force });
     console.log(`[web] 3D 预览客户端插件：${web.patched ? '已注册 toolview 插槽' : '已就绪'}（${web.pluginDir}）`);
+  }
+
+  // ── show_image 前置：harness text-only 补丁（可 --no-patch 跳过）──
+  if (opts.noPatch) {
+    console.log('[patch] --no-patch：跳过 harness text-only 补丁（show_image 无法显示图片）。');
+  } else if (harnessRoot) {
+    const { applyTextOnlyPatch } = await import('./patch-harness.mjs');
+    const r = await applyTextOnlyPatch(harnessRoot);
+    const label = {
+      applied: '已应用 text-only 补丁',
+      already: '已打过补丁（幂等跳过）',
+      'source-mismatch': '源串不匹配（harness 已升级？）→ 未改动，请核对 dsh-llm-deepseek 版本',
+      'adapter-not-found': '未找到 dsh-llm-deepseek/lib/index.js → 跳过',
+    }[r.reason] ?? `未知结果 ${r.reason}`;
+    console.log(`[patch] ${label}（${r.path}）`);
+  } else {
+    console.log('[patch] 未找到 dsh harness，跳过 text-only 补丁（show_image 依赖该补丁）。');
   }
   return 0;
 }

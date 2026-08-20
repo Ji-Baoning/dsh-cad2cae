@@ -77,7 +77,7 @@ def cmd_verify(backend_dir, payload):
 
 
 def cmd_manifest(backend_dir, payload, out_dir):
-    from viewer_manifest import build_manifest
+    from viewer_manifest import build_manifest, build_preview
     wf = payload.get("workflow_id", "default")
     intent = payload.get("intent") or {}
     # 与 cmd_compile 同款推导：仓库根 = backend_dir（<repo>/src）的父目录。
@@ -89,7 +89,13 @@ def cmd_manifest(backend_dir, payload, out_dir):
         # runPython 抛 BACKEND_EXIT_1，tools.js 的 MANIFEST_FAILED 分支永远不可达。响亮报错不静默。
         return {"ok": False, "error": "manifest 失败: " + str(e)}
     m["workflow_id"] = wf
-    return {"ok": True, "manifest": m}
+    # 静态预览 PNG：与 manifest 解耦，preview 失败不影响 3D 卡片（卡片仍可用）；agent 据
+    # preview.preview 路径调 show_image 展示到消息流。响亮报错在 preview 字段而非静默吞掉。
+    try:
+        preview = build_preview(out_dir, intent, repo_root=repo_root)
+    except Exception as e:
+        preview = {"ok": False, "error": "preview 渲染失败: " + str(e)}
+    return {"ok": True, "manifest": m, "preview": preview}
 
 
 def main():

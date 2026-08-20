@@ -1,5 +1,5 @@
 // preset/ai-cad-dsh/preset/lib/tools.js
-// 23 个 cad_* 工具的 execute(ctx, args) 完整实现。纯逻辑，不引入 @deepseek-ai。
+// 24 个工具（23 个 cad_* + show_image）的 execute(ctx, args) 完整实现。纯逻辑，不引入 @deepseek-ai。
 // 状态机新增状态 generated / compiled（在 approved_for_execution 之后、verified/execution_failed 之前）。
 // 裁定落地：A6（cad_measure 默认路径 = cad-state/<id>/assembly.step）、
 // A10（setParameter 在 parts 数组中按 node.id 查找）、A11（cad_start_workflow 先写
@@ -17,6 +17,7 @@ import {
   validateIntent, generateSources, compileSources, measureStep,
   verifyExecution, healthCheck, backendOp,
 } from './backend.js';
+import { makeShowImageTool } from './show-image.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, '..', '..', '..', '..');
@@ -45,6 +46,13 @@ const SIM = (name) => ({ name, description: `CAE 仿真插槽（预留）：${na
 // render 只给模型文本摘要，绝不泄露 base64（模型侧值里本就没有 base64，只有路径）。
 function safeParseJson(value) {
   try { return JSON.parse(value); } catch { return null; }
+}
+
+// wrap（ai-cad-plugin.js）对带 output 的工具不再 stringify → render/presentationMeta 收到原始对象；
+// 历史实现曾收到 JSON 字符串，故统一接受「对象或 JSON 字符串」两种形态（向后兼容）。
+function parseValue(value) {
+  if (value && typeof value === 'object') return value;
+  return safeParseJson(value);
 }
 
 function clientManifest(m) {
@@ -285,19 +293,27 @@ export function makeTools(config) {
       parameters: { workflow_id: { type: 'string' } },
       // Plan B 数据契约：render 给模型文本摘要（不见 manifest 明细/base64）；
       // presentationMeta 把后端 manifest 投影为客户端契约并落进 block.meta.manifest（客户端可见）。
-      // wrap（ai-cad-plugin.js）对 t.output ?? 默认：仅本工具自带 output。
+      // wrap（ai-cad-plugin.js）对 t.output ?? 默认：仅本工具自带 output（带 output 则值不透传为字符串，
+      // 故这里用 parseValue 同时接受对象与 JSON 字符串）。
       output: {
         schema: { type: 'string' },
         render(_args, value) {
-          const parsed = safeParseJson(value);
+          const parsed = parseValue(value);
           const m = parsed && parsed.ok ? parsed.manifest : null;
-          const text = m
+          const base = m
             ? `3D 预览就绪：${m.parts.length} 个零件（${m.viewer === 'assembly' ? '装配体' : '单零件'}）${m.assembly_step ? '，装配 ' + m.assembly_step : ''}。`
             : `3D 预览失败：${(parsed && parsed.error) || 'manifest 缺失或非法'}`;
-          return [{ type: 'text', text }];
+          // 静态预览图路径（show_image 用）：preview.ok 时给出仓库相对路径；失败则响亮带原因。
+          const pv = parsed && parsed.preview;
+          const pvText = pv
+            ? (pv.ok
+                ? `静态预览图已生成：${pv.preview}（调用 show_image 显示到对话）`
+                : `静态预览图生成失败：${pv.error}`)
+            : '';
+          return [{ type: 'text', text: [base, pvText].filter(Boolean).join('\n') }];
         },
         presentationMeta(_args, value) {
-          const parsed = safeParseJson(value);
+          const parsed = parseValue(value);
           if (!parsed || !parsed.ok || !parsed.manifest) return;
           return { manifest: clientManifest(parsed.manifest) };
         },
@@ -312,7 +328,8 @@ export function makeTools(config) {
         const r = await backendOp(ctx, configStatePath, 'manifest',
           { workflow_id: st.workflow_id, intent: L2i }, { outDir: outDirFor(args) });
         if (!r.ok) throw new Error('MANIFEST_FAILED: ' + (r.error || ''));
-        return { ok: true, manifest: r.manifest };
+        // preview 与 manifest 同源返回：agent 据 r.preview.preview 调 show_image 把静态图放进消息流。
+        return { ok: true, manifest: r.manifest, preview: r.preview };
       } },
 
     { name: 'cad_modify', description: '记录修改请求（提示 LLM 更新 L2 后重新 attach）',
@@ -386,6 +403,10 @@ export function makeTools(config) {
     SIM('cad_simulate_setup'),
     SIM('cad_simulate_run'),
     SIM('cad_simulate_report'),
+
+    // show_image（2026-08-19 已批准设计）：把生成/渲染出的图片显示到对话。带自定义 output
+    // （[text, image] 内容块），wrap 对它有 output 时不再 stringify → execute 返回原始对象。
+    makeShowImageTool(),
   ];
   return tools;
 }

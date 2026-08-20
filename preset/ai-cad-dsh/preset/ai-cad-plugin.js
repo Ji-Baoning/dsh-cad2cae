@@ -3,6 +3,7 @@
 import { defineTool } from '@deepseek-ai/dsh-tools';
 import z from '@deepseek-ai/schemastery';
 import { registerTools } from './lib/register.js';
+import { pickOutput, serializeResult } from './lib/wrap.js';
 
 export const name = 'AI-CAD';
 export const inject = ['systemPrompt', 'tools'];
@@ -23,6 +24,7 @@ const PROMPT = [
   '6. **禁止自动重放**：execution_failed 只能由 cad_prepare_retry（确认清理）复位；不得静默重试或绕过校验。',
   '7. **CAE 预留**：cad_simulate_setup/run/report 为 Phase 2 插槽，Phase 1 调用一律返回 SIMULATION_NOT_IMPLEMENTED。',
   '8. **单位与版本**：几何单位 meters，顶层 schema_version: 2。',
+  '9. **静态预览图**：cad_show_step 返回的 preview 字段带静态预览 PNG 路径（仓库相对路径，如 cad-state/<id>/preview.png）；紧随其调用 show_image(path=该路径) 把预览图显示到对话。show_image 失败（如文件缺失）要如实报告错误，不得静默跳过。',
 ].join('\n');
 
 export function apply(ctx, config) {
@@ -34,14 +36,15 @@ export function apply(ctx, config) {
     // output.render 的返回值就是模型看到的 tool-result 内容（dsh-tools createSuccessResult）。
     // 历史 bug：render() 无条件 return ''，使模型拿不到任何工具结果（session 里 tool-result content 为空）。
     // wlj 参照插件的标准写法：返回 [{ type: 'text', text }] 内容块。
-    // t.output ?? 默认：cad_show_step 自带 output（presentationMeta 投递客户端 manifest，见 tools.js），
-    // 其余 22 个工具仍走默认 render（JSON 序列化结果给模型）。
-    output: t.output ?? { schema: { type: 'string' }, render(_args, value) {
-      return [{ type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value, null, 2) }];
-    } },
+    // pickOutput：工具自带 output（cad_show_step 的 presentationMeta 投递客户端 manifest、
+    // show_image 的 render 返回 [text, image] 内容块）原样用；其余 23 个 cad_* 走默认 render
+    // （JSON 序列化结果给模型）。决策逻辑在 lib/wrap.js（零依赖可测）。
+    output: pickOutput(t),
     async execute(args) {
       const result = await t.execute(ctx, args || {});
-      return JSON.stringify(result, null, 2);
+      // 带自定义 output 的工具 execute 结果不 stringify，原样交 createSuccessResult
+      // （render/presentationMeta 收到对象：showImageContent 组 image 块、clientManifest 投影）。
+      return serializeResult(t, result);
     },
   });
   registerTools(ctx, config, wrap);

@@ -67,9 +67,9 @@ function assertParameterMap(params, path) {
   for (const [name, schema] of Object.entries(params)) assertValueSchema(schema, `${path}.${name}`);
 }
 
-test('23 个工具 parameters 全部符合 dsh defineTool 属性映射格式', () => {
+test('24 个工具 parameters 全部符合 dsh defineTool 属性映射格式', () => {
   const tools = makeTools({ python: 'python3' });
-  assert.equal(tools.length, 23);
+  assert.equal(tools.length, 24);
   for (const tool of tools) assertParameterMap(tool.parameters, `${tool.name}.parameters`);
 });
 
@@ -83,17 +83,22 @@ test('插件入口 schemastery 使用默认导入（import z from，非命名导
     'dsh-tools 需命名导入 defineTool');
 });
 
-test('插件入口 output.render 返回内容块而非空串（历史 bug：render() return \'\' 使模型看不到工具结果）', async () => {
-  const src = await readFile(PLUGIN_SRC, 'utf8');
+test('wrap 默认 render 返回内容块而非空串；插件经 lib/wrap.js 接线（历史 bug：render() return \'\' 使模型看不到工具结果）', async () => {
+  const wrapSrc = await readFile(join(__dirname, 'wrap.js'), 'utf8');
   // dsh-tools createSuccessResult 把 output.render 的返回值作为 tool-result 内容；
   // 无条件返回空串 = 模型永远看不到工具返回（session 里 tool-result content: ""）。
-  assert.doesNotMatch(src, /render\s*\(\s*\)\s*\{[^}]*return\s*''\s*;?\s*\}/,
+  // render 逻辑已迁入 lib/wrap.js（pickOutput 的默认 render 返回 [{ type: 'text', text }] 内容块）。
+  assert.doesNotMatch(wrapSrc, /return\s*''\s*;?/,
     'render 不得无条件返回空串');
-  assert.match(src, /render\(\s*_?args[^)]*\)\s*\{\s*return\s*\[\s*\{\s*type:\s*['"]text['"]/,
-    'render 应返回 [{ type: "text", text }] 内容块（wlj 参照插件同款）');
+  assert.match(wrapSrc, /return\s*\[\s*\{\s*type:\s*['"]text['"]/,
+    'wrap 默认 render 应返回 [{ type: "text", text }] 内容块（wlj 参照插件同款）');
+  // 插件必须从 wrap.js 引入 pickOutput/serializeResult（否则 wrap 回退旧逻辑 = 历史 bug 复发）。
+  const src = await readFile(PLUGIN_SRC, 'utf8');
+  assert.match(src, /import\s*\{\s*pickOutput,\s*serializeResult\s*\}\s*from\s*'\.\/lib\/wrap\.js';/,
+    '插件应经 lib/wrap.js 接线 pickOutput/serializeResult');
 });
 
-test('（可选）真实 dsh-tools defineTool 编译全部 23 个工具；找不到 harness 则跳过', async (t) => {
+test('（可选）真实 dsh-tools defineTool 编译全部 24 个工具（含自带 output schema）；找不到 harness 则跳过', async (t) => {
   const { resolveHarnessDeps } = await import('../../../../install-dsh-preset.mjs');
   const deps = await resolveHarnessDeps();
   if (!deps) {
@@ -103,13 +108,17 @@ test('（可选）真实 dsh-tools defineTool 编译全部 23 个工具；找不
   const { defineTool } = await import(pathToFileURL(join(deps['dsh-tools'], 'lib', 'index.js')).href);
   const tools = makeTools({ python: 'python3' });
   for (const tool of tools) {
+    // 带自带 output 的工具（cad_show_step / show_image）用其真实 output.schema：
+    // dsh value schema 编译器（compileValueSchema, allowRequired:false）会拒绝顶层 required 键，
+    // show_image 若残留该键，此测试就是最后一层防线（插件加载即崩）。
+    const output = tool.output ?? { schema: { type: 'string' }, render() { return ''; } };
     assert.doesNotThrow(() => defineTool({
       name: tool.name,
       description: tool.description,
       parameters: tool.parameters,
-      output: { schema: { type: 'string' }, render() { return ''; } },
+      output,
       async execute() { return ''; },
-    }), `${tool.name} 必须能被真实 dsh-tools defineTool 编译`);
+    }), `${tool.name} 必须能被真实 dsh-tools defineTool 编译（output.schema 为 ${JSON.stringify(output.schema).slice(0, 60)}…）`);
   }
 });
 

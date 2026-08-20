@@ -27,7 +27,33 @@ export function tempBase() {
   return realpathSync(dir);
 }
 
-export function makeCtx({ baseDir, python }) {
+// attachments mock（show_image 测试用）：imageLimits 常量 + saveImage 记录输入并返回确定 ref。
+// makeCtx({ attachments: true }) 注入默认 mock；传对象则原样使用（可自定义出错行为）。
+export function makeAttachmentsMock() {
+  const saved = [];
+  return {
+    imageLimits: {
+      maxImageBytes: 20 * 1024 * 1024,
+      maxMessageImageBytes: 20 * 1024 * 1024,
+      maxImagePixels: 50_000_000,
+      mediaTypes: ['image/png', 'image/jpeg', 'image/webp', 'image/gif'],
+    },
+    saved,
+    async saveImage(input) {
+      saved.push(input);
+      return {
+        attachmentId: 'att-' + saved.length,
+        mediaType: input.mediaType,
+        bytes: input.data.byteLength,
+        width: 16,
+        height: 12,
+        ...(input.name === void 0 ? {} : { name: input.name }),
+      };
+    },
+  };
+}
+
+export function makeCtx({ baseDir, python, attachments }) {
   // 统一映射：REPO_ROOT 绝对路径 → baseDir 相对；其余路径 → baseDir 下。所有 fs 方法都过这一层，
   // 因此调用方无论传原始绝对路径还是已 resolve 的路径，读写都落在临时目录。
   // 镜像真实 dsh fs 服务契约：resolve() 返回 { targetKey, displayPath } 目标对象，
@@ -65,6 +91,14 @@ export function makeCtx({ baseDir, python }) {
       mkdirSync(dirname(map(p)), { recursive: true });
       writeFileSync(map(p), text, 'utf8');
     },
+    // readBytes 契约（show_image 用）：resolve() 产物 + signal + 最大字节数 → Uint8Array。
+    async readBytes(p, _signal, maxBytes) {
+      if (!p || typeof p !== 'object' || typeof p.targetKey !== 'string') {
+        throw new TypeError('fs.readBytes 需要 resolve() 后的 target 对象（真实 dsh 契约）');
+      }
+      const data = readFileSync(map(p));
+      return data.subarray(0, maxBytes);
+    },
     processPath: (p) => toPath(p),
   };
   const subprocess = {
@@ -90,7 +124,13 @@ export function makeCtx({ baseDir, python }) {
       return { done: Promise.resolve({ exitCode: result.code }), collected };
     },
   };
-  return { get: (s) => s === 'fs' ? fs : s === 'subprocess' ? subprocess : null, python, baseDir };
+  const att = attachments === true ? makeAttachmentsMock() : attachments;
+  return {
+    // 未注册服务返回 undefined（镜像真实 dsh ctx.get 契约；show_image 靠 `=== undefined` 判定
+    // NO_ATTACHMENT_SERVICE——mock 绝不能返回 null，否则该路径测不到）。
+    get: (s) => s === 'fs' ? fs : s === 'subprocess' ? subprocess : s === 'attachments' ? att : undefined,
+    python, baseDir,
+  };
 }
 
 // 把 state 写入 <baseDir>/cad-state/<workflow_id>/state.json，与工具的 loadState 路径（REPO_ROOT

@@ -1,5 +1,5 @@
 // preset/ai-cad-dsh/preset/lib/tools.test.js
-// Task 5 测试：23 个工具的形状、CAE 插槽、状态门拒绝、setParameter（A10 裁定版）。
+// Task 5 测试：24 个工具（23 个 cad_* + show_image）的形状、CAE 插槽、状态门拒绝、setParameter（A10 裁定版）。
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { makeTools, setParameter, nextAction } from './tools.js';
@@ -12,10 +12,10 @@ import { fileURLToPath } from 'node:url';
 // 与 tools.js 同款推导：本文件位于 preset/ai-cad-dsh/preset/lib/，4 级上溯 = 仓库根。
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..');
 
-test('恰好 23 个工具且 name 唯一', () => {
+test('恰好 24 个工具且 name 唯一', () => {
   const tools = makeTools({ python: 'python3' });
-  assert.equal(tools.length, 23);
-  assert.equal(new Set(tools.map(t => t.name)).size, 23);
+  assert.equal(tools.length, 24);
+  assert.equal(new Set(tools.map(t => t.name)).size, 24);
   for (const t of tools) {
     assert.ok(typeof t.name === 'string' && t.name.length > 0);
     assert.ok(typeof t.description === 'string' && t.description.length > 0);
@@ -147,9 +147,9 @@ test('cad_show_step manifest 失败 → MANIFEST_FAILED（cmd_manifest {ok:false
   }
 });
 
-test('只有 cad_show_step 自带 output（其余 22 个走 wrap 默认 render）', () => {
+test('只有 cad_show_step 与 show_image 自带 output（其余 22 个 cad_* 走 wrap 默认 render）', () => {
   const tools = makeTools({ python: 'python3' });
-  assert.deepEqual(tools.filter(t => t.output !== undefined).map(t => t.name), ['cad_show_step']);
+  assert.deepEqual(tools.filter(t => t.output !== undefined).map(t => t.name), ['cad_show_step', 'show_image']);
 });
 
 test('cad_show_step.output.render 只给模型文本摘要（不 dump manifest 明细）', () => {
@@ -164,6 +164,25 @@ test('cad_show_step.output.render 只给模型文本摘要（不 dump manifest �
   assert.equal(blocks[0].type, 'text');
   assert.match(blocks[0].text, /3D 预览就绪/);
   assert.doesNotMatch(blocks[0].text, /workflow_id/); // 摘要而非原始 JSON dump
+  assert.doesNotMatch(blocks[0].text, /静态预览图/);    // 无 preview 字段 → 不追加预览行
+});
+
+test('cad_show_step.output.render 接受对象入参（parseValue）且 preview.ok 时提示调用 show_image', () => {
+  const tools = Object.fromEntries(makeTools({ python: 'python3' }).map(t => [t.name, t]));
+  // 对象（非 JSON 字符串）：wrap 对带 output 的工具不 stringify，render 收到的就是原始对象。
+  const value = { ok: true,
+    manifest: { version: 1, workflow_id: 'wf-1', viewer: 'assembly', parts: [], connections: [], assembly_step: '' },
+    preview: { ok: true, preview: 'cad-state/wf-1/preview.png' } };
+  const blocks = tools.cad_show_step.output.render({}, value);
+  assert.match(blocks[0].text, /静态预览图已生成：cad-state\/wf-1\/preview\.png（调用 show_image 显示到对话）/);
+});
+
+test('cad_show_step.output.render 在 preview.ok=false 时响亮带原因', () => {
+  const tools = Object.fromEntries(makeTools({ python: 'python3' }).map(t => [t.name, t]));
+  const value = { ok: true, manifest: { version: 1, parts: [], connections: [] },
+    preview: { ok: false, error: '无可渲染零件（缺 STEP）' } };
+  const blocks = tools.cad_show_step.output.render({}, value);
+  assert.match(blocks[0].text, /静态预览图生成失败：无可渲染零件（缺 STEP）/);
 });
 
 test('cad_show_step.output.presentationMeta 产出客户端契约 manifest（step_b64/name/measure 键名）', () => {
