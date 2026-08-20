@@ -67,9 +67,9 @@ function assertParameterMap(params, path) {
   for (const [name, schema] of Object.entries(params)) assertValueSchema(schema, `${path}.${name}`);
 }
 
-test('22 个工具 parameters 全部符合 dsh defineTool 属性映射格式', () => {
+test('23 个工具 parameters 全部符合 dsh defineTool 属性映射格式', () => {
   const tools = makeTools({ python: 'python3' });
-  assert.equal(tools.length, 22);
+  assert.equal(tools.length, 23);
   for (const tool of tools) assertParameterMap(tool.parameters, `${tool.name}.parameters`);
 });
 
@@ -93,7 +93,7 @@ test('插件入口 output.render 返回内容块而非空串（历史 bug：rend
     'render 应返回 [{ type: "text", text }] 内容块（wlj 参照插件同款）');
 });
 
-test('（可选）真实 dsh-tools defineTool 编译全部 22 个工具；找不到 harness 则跳过', async (t) => {
+test('（可选）真实 dsh-tools defineTool 编译全部 23 个工具；找不到 harness 则跳过', async (t) => {
   const { resolveHarnessDeps } = await import('../../../../install-dsh-preset.mjs');
   const deps = await resolveHarnessDeps();
   if (!deps) {

@@ -15,10 +15,10 @@ function mockCtx() {
   };
 }
 
-test('registerTools 注册 22 个带 schema 的工具', () => {
+test('registerTools 注册 23 个带 schema 的工具', () => {
   const ctx = mockCtx();
   registerTools(ctx, { python: 'python3' }, (t) => ({ ...t, __wrapped: true }));
-  assert.equal(ctx._tools.length, 22);
+  assert.equal(ctx._tools.length, 23);
   for (const t of ctx._tools) {
     assert.ok(t.name && t.description && t.parameters);
     assert.equal(t.__wrapped, true);

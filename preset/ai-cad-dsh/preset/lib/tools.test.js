@@ -1,15 +1,15 @@
 // preset/ai-cad-dsh/preset/lib/tools.test.js
-// Task 5 测试：22 个工具的形状、CAE 插槽、状态门拒绝、setParameter（A10 裁定版）。
+// Task 5 测试：23 个工具的形状、CAE 插槽、状态门拒绝、setParameter（A10 裁定版）。
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { makeTools, setParameter, nextAction } from './tools.js';
 import { makeCtx, tempBase, writeState, answeredIntake, L2 } from './test/support.js';
 import { INTAKE_QUESTIONS, PLAN_QUESTIONS } from './questions.js';
 
-test('恰好 22 个工具且 name 唯一', () => {
+test('恰好 23 个工具且 name 唯一', () => {
   const tools = makeTools({ python: 'python3' });
-  assert.equal(tools.length, 22);
-  assert.equal(new Set(tools.map(t => t.name)).size, 22);
+  assert.equal(tools.length, 23);
+  assert.equal(new Set(tools.map(t => t.name)).size, 23);
   for (const t of tools) {
     assert.ok(typeof t.name === 'string' && t.name.length > 0);
     assert.ok(typeof t.description === 'string' && t.description.length > 0);
@@ -98,4 +98,25 @@ test('cad_edit_parameter 门禁与 re-arm', async () => {
   await writeState(ctx, null, withL2('verified'));
   await assert.rejects(() => tools.cad_edit_parameter.execute(ctx, { workflow_id: 'wf-1', node_id: 'hn1', field: 'depth', value: 0.02 }),
     /EDIT_NOT_ALLOWED/);
+});
+
+test('cad_show_step 在未 compile 时被拒绝', async () => {
+  const ctx = makeCtx({ baseDir: tempBase(), python: 'python3' });
+  const tools = Object.fromEntries(makeTools({ python: 'python3' }).map(t => [t.name, t]));
+  await writeState(ctx, null, { ...answeredIntake('wf-1'), status: 'approved_for_execution', levels: { L2: structuredClone(L2) } });
+  await assert.rejects(() => tools.cad_show_step.execute(ctx, { workflow_id: 'wf-1' }), /NEED_COMPILE/);
+});
+
+test('cad_show_step 返回 manifest（compiled 后 wiring 通）', async () => {
+  const ctx = makeCtx({ baseDir: tempBase(), python: 'python3' });
+  const tools = Object.fromEntries(makeTools({ python: 'python3' }).map(t => [t.name, t]));
+  await writeState(ctx, null, { ...answeredIntake('wf-1'), status: 'compiled', levels: { L2: structuredClone(L2) } });
+  const r = await tools.cad_show_step.execute(ctx, { workflow_id: 'wf-1' });
+  assert.equal(r.ok, true);
+  assert.equal(r.manifest.version, 1);
+  assert.equal(r.manifest.viewer, 'assembly');
+  assert.equal(r.manifest.parts.length, 2);
+  assert.equal(r.manifest.parts[0].id, 'c1');
+  assert.ok(r.manifest.parts[0].measure.error); // 测试无真实 STEP → 响亮报缺，不静默
+  assert.equal(r.manifest.connections[0].id, 'J1');
 });

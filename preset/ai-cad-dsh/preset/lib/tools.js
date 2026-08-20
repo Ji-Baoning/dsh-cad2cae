@@ -1,5 +1,5 @@
 // preset/ai-cad-dsh/preset/lib/tools.js
-// 22 个 cad_* 工具的 execute(ctx, args) 完整实现。纯逻辑，不引入 @deepseek-ai。
+// 23 个 cad_* 工具的 execute(ctx, args) 完整实现。纯逻辑，不引入 @deepseek-ai。
 // 状态机新增状态 generated / compiled（在 approved_for_execution 之后、verified/execution_failed 之前）。
 // 裁定落地：A6（cad_measure 默认路径 = cad-state/<id>/assembly.step）、
 // A10（setParameter 在 parts 数组中按 node.id 查找）、A11（cad_start_workflow 先写
@@ -14,7 +14,7 @@ import {
 import { openQuestions, allRequiredAnswered } from './questions.js';
 import {
   validateIntent, generateSources, compileSources, measureStep,
-  verifyExecution, healthCheck,
+  verifyExecution, healthCheck, backendOp,
 } from './backend.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -242,6 +242,21 @@ export function makeTools(config) {
         const r = await measureStep(ctx, configStatePath, path);
         if (!r.ok) throw new Error('MEASURE_FAILED: ' + r.error);
         return { ok: true, measured: r.measured };
+      } },
+
+    { name: 'cad_show_step', description: 'compile 成功后把 STEP 交付物显示为 3D 预览（对话内单卡片，重编译原地更新）',
+      parameters: { workflow_id: { type: 'string' } },
+      async execute(ctx, args) {
+        const st = await needs(ctx, args);
+        if (st.status !== 'compiled' && st.status !== 'verified' && st.status !== 'completed') {
+          throw new Error('NEED_COMPILE: 请先 cad_compile');
+        }
+        const L2i = st.levels && st.levels.L2;
+        if (!L2i) throw new Error('NO_L2_INTENT');
+        const r = await backendOp(ctx, configStatePath, 'manifest',
+          { workflow_id: st.workflow_id, intent: L2i }, { outDir: outDirFor(args) });
+        if (!r.ok) throw new Error('MANIFEST_FAILED: ' + (r.error || ''));
+        return { ok: true, manifest: r.manifest };
       } },
 
     { name: 'cad_modify', description: '记录修改请求（提示 LLM 更新 L2 后重新 attach）',

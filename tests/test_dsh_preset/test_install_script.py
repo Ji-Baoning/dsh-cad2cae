@@ -142,7 +142,7 @@ def test_installed_preset_links_harness_deps(tmp_path):
 
 
 def test_installed_preset_applies(tmp_path):
-    """端到端：安装后的预设入口可被 node 导入并 apply（mock ctx），注册 22 个 cad_* 工具。
+    """端到端：安装后的预设入口可被 node 导入并 apply（mock ctx），注册 23 个 cad_* 工具。
 
     一次性覆盖三个历史挂载 bug：
       1) 缺 node_modules → 插件 import '@deepseek-ai/dsh-tools' 解析失败（Cannot find package）；
@@ -166,7 +166,7 @@ def test_installed_preset_applies(tmp_path):
         "  tools: { register: (t) => { n++; if (!t.name.startsWith('cad_')) throw new Error('bad tool name ' + t.name); } },\n"
         "};\n"
         "await mod.apply(ctx, { backendDir: process.argv[2] });\n"
-        "if (n !== 22) throw new Error('expected 22 tools, got ' + n);\n"
+        "if (n !== 23) throw new Error('expected 23 tools, got ' + n);\n"
         "console.log('APPLY_OK tools=' + n);\n"
     )
     run = subprocess.run(
@@ -175,4 +175,4 @@ def test_installed_preset_applies(tmp_path):
         text=True,
     )
     assert run.returncode == 0, f"apply 失败：{run.stderr}\nstdout={run.stdout}"
-    assert "APPLY_OK tools=22" in run.stdout
+    assert "APPLY_OK tools=23" in run.stdout
