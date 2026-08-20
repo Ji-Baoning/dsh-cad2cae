@@ -6,7 +6,7 @@
 
 ## 项目简介
 
-CAD 工程师和设计团队希望直接从自然语言需求得到可编辑的 CAD 模型，而不必手写几何脚本，同时保证设计意图、可追溯性与门禁化验证。dsh-cad2cae 正是为此构建的 DSH 插件：先对意图层做严格校验（图可达性 / 无环性 / 静态完备 / 运动学一致性、强制米制、标识符白名单），再确定性生成可编辑的 build123d 源码，并通过 OCCT 子进程编译为可编辑 STEP（零件 + 装配）。生成结果在交付前按契约实测闭环（测量 / 验证），任一环节失败都响亮报错而不静默降级。系统分三层实现：Plan A 纯标准库意图校验器、Plan B 代码生成与编译流水线、Plan C DSH 插件层（22 工具 + 纯函数状态机 + JSON 子进程后端），当前功能完整且两套测试全绿。
+CAD 工程师和设计团队希望直接从自然语言需求得到可编辑的 CAD 模型，而不必手写几何脚本，同时保证设计意图、可追溯性与门禁化验证。dsh-cad2cae 正是为此构建的 DSH 插件：先对意图层做严格校验（图可达性 / 无环性 / 静态完备 / 运动学一致性、强制米制、标识符白名单），再确定性生成可编辑的 build123d 源码，并通过 OCCT 子进程编译为可编辑 STEP（零件 + 装配）。生成结果在交付前按契约实测闭环（测量 / 验证），任一环节失败都响亮报错而不静默降级。系统分三层实现：Plan A 纯标准库意图校验器、Plan B 代码生成与编译流水线、Plan C DSH 插件层（23 工具 + 纯函数状态机 + JSON 子进程后端），当前功能完整且两套测试全绿。
 
 ## 安装
 
@@ -15,10 +15,10 @@ CAD 工程师和设计团队希望直接从自然语言需求得到可编辑的 
 **安装与测试**：
 
 ```bash
-python -m pytest -q                    # Python 套件：117 passed
+python -m pytest -q                    # Python 套件：129 passed
 cd preset/ai-cad-dsh
 npm install                            # 测试依赖（lib/*.js 本身零依赖）
-npm test                               # Node 套件：31 passed
+npm test                               # Node 套件：35 passed
 ```
 
 **作为 DSH preset 使用**：运行安装脚本，把预设装入 DSH 本地预设根，并自动改写副本的 `backendDir` 指向本仓库 `src/`、在副本内建立 `node_modules/@deepseek-ai/{dsh-tools,schemastery}` 符号链接（指向 harness 安装内的同名包——插件入口的 `import '@deepseek-ai/dsh-tools'` 依赖它解析）：
@@ -29,19 +29,19 @@ node install-dsh-preset.mjs --force    # 覆盖重装
 node install-dsh-preset.mjs --dry-run  # 预检（只打印将做什么，不写盘）
 ```
 
-脚本遵守 DSH 的 home 解析（`$DSH_HOME` 优先，默认 `~/.dsh`），支持 `--id <id>` 自定义预设 id；仓库源文件保持原样，复制时排除测试与缓存文件。找不到 dsh harness 时会警告并给出手动建链接的命令。安装后 DSH 会话选择 **AI-CAD** 即可（22 个 `cad_*` 工具）；**若 dsh web 进程曾加载过失败版本的预设，需重启 dsh web 后再选择**（Node 的 ESM 失败导入会按路径缓存，改名入口也只能绕开一次）。
+脚本遵守 DSH 的 home 解析（`$DSH_HOME` 优先，默认 `~/.dsh`），支持 `--id <id>` 自定义预设 id；仓库源文件保持原样，复制时排除测试与缓存文件。找不到 dsh harness 时会警告并给出手动建链接的命令。安装后 DSH 会话选择 **AI-CAD** 即可（23 个 `cad_*` 工具）；**若 dsh web 进程曾加载过失败版本的预设，需重启 dsh web 后再选择**（Node 的 ESM 失败导入会按路径缓存，改名入口也只能绕开一次）。
 
 ### 3D 预览（cad_show_step）
 
 - 安装脚本会**构建并注册 3D 预览客户端插件**（`preset/ai-cad-dsh/web` → DSH web profile）：浏览器端 occt-import-js（WASM）直接解析 STEP 字节，渲染可交互 3D 视口 + 零件树（显隐/高亮）+ 测量面板。
 - `--no-web` 可跳过客户端插件安装；`node install-web-plugin.mjs --force` 单独重装。
 - 使用：compile 成功后 agent 调用 `cad_show_step`，对话中同一张 3D 卡片原地更新，旧调用收敛为细条。
-- 工具数仍为 22（`cad_show_step` 属既有 cad 工具集；`show_image` 独立计）。
+- 工具数 22 → 23（`cad_show_step` 为本计划新增；`show_image` 独立计）。
 
 **后端 CLI 直调**：
 
 ```bash
-python preset/ai-cad-dsh/preset/python/backend_cli.py --backend-dir src <health|validate|generate|compile|measure|verify> --payload '<json>' [--out-dir <dir>]
+python preset/ai-cad-dsh/preset/python/backend_cli.py --backend-dir src <health|validate|generate|compile|measure|verify|manifest> --payload '<json>' [--out-dir <dir>]
 ```
 
 ## 文档
