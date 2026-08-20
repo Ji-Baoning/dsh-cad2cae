@@ -66,3 +66,20 @@ def test_build_manifest_missing_step_reports_error(tmp_path):
     Path(out).mkdir(parents=True, exist_ok=True)
     m = build_manifest(out, INTENT, repo_root=str(tmp_path))
     assert m['parts'][0]['measure']['error']          # STEP 缺失不静默
+
+
+from backend_cli import cmd_manifest
+
+
+def test_cmd_manifest_wraps_workflow_id_and_repo_rel(tmp_path):
+    out = str(tmp_path / 'out')
+    for n in ('hn1', 'pn1', 'assembly'):
+        _write_box_step(out, n)
+    res = cmd_manifest(str(tmp_path / 'src'), {'workflow_id': 'wf1', 'intent': INTENT}, out)
+    assert res['ok'] is True
+    m = res['manifest']
+    assert m['version'] == 1
+    assert m['workflow_id'] == 'wf1'
+    assert m['viewer'] == 'assembly'
+    assert m['parts'][0]['step'] == os.path.join('out', 'hn1.step')  # 相对 repo_root=tmp_path
+    assert m['assembly_step'] == os.path.join('out', 'assembly.step')

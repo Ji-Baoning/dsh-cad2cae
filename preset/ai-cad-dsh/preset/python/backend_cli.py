@@ -76,10 +76,22 @@ def cmd_verify(backend_dir, payload):
     return verify(payload.get("step_paths", []), payload.get("expected", {}))
 
 
+def cmd_manifest(backend_dir, payload, out_dir):
+    from viewer_manifest import build_manifest
+    wf = payload.get("workflow_id", "default")
+    intent = payload.get("intent") or {}
+    # 与 cmd_compile 同款推导：仓库根 = backend_dir（<repo>/src）的父目录。
+    repo_root = os.path.dirname(os.path.abspath(backend_dir))
+    m = build_manifest(out_dir, intent, repo_root=repo_root)
+    m["workflow_id"] = wf
+    return {"ok": True, "manifest": m}
+
+
 def main():
     ap = argparse.ArgumentParser(description="AI-CAD 后端 CLI")
     ap.add_argument("--backend-dir", required=True)
-    ap.add_argument("command", choices=["health", "validate", "generate", "compile", "measure", "verify"])
+    ap.add_argument("command", choices=["health", "validate", "generate", "compile",
+                                        "measure", "verify", "manifest"])
     ap.add_argument("--payload", required=True)
     ap.add_argument("--out-dir", default=os.getcwd())
     args = ap.parse_args()
@@ -96,6 +108,8 @@ def main():
             result = cmd_compile(args.backend_dir, payload, args.out_dir)
         elif args.command == "measure":
             result = cmd_measure(args.backend_dir, payload)
+        elif args.command == "manifest":
+            result = cmd_manifest(args.backend_dir, payload, args.out_dir)
         else:
             result = cmd_verify(args.backend_dir, payload)
         print(json.dumps(result, ensure_ascii=False, default=str))
