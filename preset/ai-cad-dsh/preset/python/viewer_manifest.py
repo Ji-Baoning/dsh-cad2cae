@@ -41,7 +41,7 @@ def build_manifest(out_dir, intent, repo_root):
             'id': cid,
             'part_ref': pref,
             'step': os.path.relpath(step_abs, repo_root),
-            'transform': placements.get(cid, _IDENTITY),
+            'transform': list(placements.get(cid, _IDENTITY)),
             'measure': _measure_abs(step_abs),
         })
 
@@ -56,7 +56,7 @@ def build_manifest(out_dir, intent, repo_root):
             parts.append({
                 'id': pref, 'part_ref': pref,
                 'step': os.path.relpath(step_abs, repo_root),
-                'transform': _IDENTITY,
+                'transform': list(_IDENTITY),
                 'measure': _measure_abs(step_abs),
             })
 
