@@ -5,6 +5,12 @@ import assert from 'node:assert/strict';
 import { makeTools, setParameter, nextAction } from './tools.js';
 import { makeCtx, tempBase, writeState, answeredIntake, L2 } from './test/support.js';
 import { INTAKE_QUESTIONS, PLAN_QUESTIONS } from './questions.js';
+import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { resolve, join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+// 与 tools.js 同款推导：本文件位于 preset/ai-cad-dsh/preset/lib/，4 级上溯 = 仓库根。
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..');
 
 test('恰好 23 个工具且 name 唯一', () => {
   const tools = makeTools({ python: 'python3' });
@@ -119,4 +125,24 @@ test('cad_show_step 返回 manifest（compiled 后 wiring 通）', async () => {
   assert.equal(r.manifest.parts[0].id, 'c1');
   assert.ok(r.manifest.parts[0].measure.error); // 测试无真实 STEP → 响亮报缺，不静默
   assert.equal(r.manifest.connections[0].id, 'J1');
+});
+
+test('cad_show_step manifest 失败 → MANIFEST_FAILED（cmd_manifest {ok:false} 路径可达）', async () => {
+  // 最终审查修复：cmd_manifest 现在把 build_manifest 失败转成 {ok:false,error}（exit 0），
+  // 使 tools.js 的 MANIFEST_FAILED 分支真正可达；此前 build_manifest 抛错会经 main() 顶层
+  // except 打印 ok:false 再 exit(1)，runPython 抛 BACKEND_EXIT_1，永远轮不到 MANIFEST_FAILED。
+  const id = 'wf-mf-' + Date.now();
+  const ctx = makeCtx({ baseDir: tempBase(), python: 'python3' });
+  const tools = Object.fromEntries(makeTools({ python: 'python3' }).map(t => [t.name, t]));
+  await writeState(ctx, null, { ...answeredIntake(id), status: 'compiled', levels: { L2: structuredClone(L2) } });
+  // 坏 placements.json 落在真实 out_dir（REPO_ROOT/cad-state/<id>，gitignore 内）：子进程读的是
+  // 真实文件系统（不经 mock fs），build_manifest 的 json.load 抛 JSONDecodeError → ok:false。
+  const outDir = join(REPO_ROOT, 'cad-state', id);
+  mkdirSync(outDir, { recursive: true });
+  writeFileSync(join(outDir, 'placements.json'), '{ 不是合法 json', 'utf8');
+  try {
+    await assert.rejects(() => tools.cad_show_step.execute(ctx, { workflow_id: id }), /MANIFEST_FAILED/);
+  } finally {
+    rmSync(outDir, { recursive: true, force: true });
+  }
 });

@@ -83,3 +83,14 @@ def test_cmd_manifest_wraps_workflow_id_and_repo_rel(tmp_path):
     assert m['viewer'] == 'assembly'
     assert m['parts'][0]['step'] == os.path.join('out', 'hn1.step')  # 相对 repo_root=tmp_path
     assert m['assembly_step'] == os.path.join('out', 'assembly.step')
+
+
+def test_cmd_manifest_returns_ok_false_when_build_fails(tmp_path):
+    out = str(tmp_path / 'out')
+    Path(out).mkdir(parents=True, exist_ok=True)
+    # 坏 placements.json → build_manifest 在 json.load 处抛 JSONDecodeError；cmd_manifest
+    # 须把它转成 {ok:false}（否则 tools.js 的 MANIFEST_FAILED 分支不可达，响亮报错不静默）。
+    Path(out, 'placements.json').write_text('{ 不是合法 json', encoding='utf-8')
+    res = cmd_manifest(str(tmp_path / 'src'), {'workflow_id': 'wf1', 'intent': INTENT}, out)
+    assert res['ok'] is False
+    assert 'manifest 失败' in res['error']

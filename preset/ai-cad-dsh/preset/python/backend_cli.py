@@ -82,7 +82,12 @@ def cmd_manifest(backend_dir, payload, out_dir):
     intent = payload.get("intent") or {}
     # 与 cmd_compile 同款推导：仓库根 = backend_dir（<repo>/src）的父目录。
     repo_root = os.path.dirname(os.path.abspath(backend_dir))
-    m = build_manifest(out_dir, intent, repo_root=repo_root)
+    try:
+        m = build_manifest(out_dir, intent, repo_root=repo_root)
+    except Exception as e:
+        # 失败 → {ok:false} 而非让 main() 顶层 except 打 {ok:false} 再 exit(1)：后者会让
+        # runPython 抛 BACKEND_EXIT_1，tools.js 的 MANIFEST_FAILED 分支永远不可达。响亮报错不静默。
+        return {"ok": False, "error": "manifest 失败: " + str(e)}
     m["workflow_id"] = wf
     return {"ok": True, "manifest": m}
 
