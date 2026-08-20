@@ -4,6 +4,7 @@
 // 裁定落地：A6（cad_measure 默认路径 = cad-state/<id>/assembly.step）、
 // A10（setParameter 在 parts 数组中按 node.id 查找）、A11（cad_start_workflow 先写
 // cad-state/<id>/state.json 再写指针文件）。
+import { readFileSync } from 'node:fs';
 import { resolve, join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -36,6 +37,42 @@ function intentPathFor(args, state) {
 const SIM = (name) => ({ name, description: `CAE 仿真插槽（预留）：${name}。Phase 1 未实现。`,
   parameters: { workflow_id: { type: 'string' } },
   async execute() { return { status: 'SIMULATION_NOT_IMPLEMENTED', message: `${name} 属于 CAE（Phase 2），Phase 1 仅 CAD 生成。` }; } });
+
+// —— Plan B 数据契约（cad_show_step output）——
+// 工具执行返回后端 manifest（step 为仓库相对路径、measure 为 volume_m3/surface_area_m2/centroid_m）；
+// output.presentationMeta 把它投影为客户端契约（step_b64 + name + measure.volume/surface_area/centroid，
+// 见 web/src/manifest.ts parsePart），经 dsh-tools 落进 result.meta → block.meta（客户端可见、模型不可见）。
+// render 只给模型文本摘要，绝不泄露 base64（模型侧值里本就没有 base64，只有路径）。
+function safeParseJson(value) {
+  try { return JSON.parse(value); } catch { return null; }
+}
+
+function clientManifest(m) {
+  const parts = (Array.isArray(m.parts) ? m.parts : []).map((p) => {
+    let step_b64 = null;
+    try {
+      step_b64 = readFileSync(resolve(REPO_ROOT, p.step)).toString('base64');
+    } catch {
+      step_b64 = null; // STEP 缺失 → 非字符串 → 客户端 parseManifest 响亮拒绝（不静默降级）
+    }
+    const meas = p.measure || {};
+    return {
+      id: p.id, part_ref: p.part_ref, name: p.part_ref,
+      step_b64,
+      transform: p.transform,
+      measure: {
+        volume: meas.volume_m3, surface_area: meas.surface_area_m2,
+        centroid: meas.centroid_m, watertight: meas.watertight,
+      },
+    };
+  });
+  return {
+    version: m.version, workflow_id: m.workflow_id, viewer: m.viewer, parts,
+    connections: m.connections || [],
+    // 单零件工作流后端 assembly_step 为 None → 归一化为 ''（客户端要求 string）。
+    assembly_step: typeof m.assembly_step === 'string' ? m.assembly_step : '',
+  };
+}
 
 export function setParameter(intent, { node_id, field, value, profile_index }) {
   // A10 裁定：parts 为节点数组，按 node.id === node_id 查找；node 或 field 不存在抛 PARAM_NOT_FOUND。
@@ -246,6 +283,25 @@ export function makeTools(config) {
 
     { name: 'cad_show_step', description: 'compile 成功后把 STEP 交付物显示为 3D 预览（对话内单卡片，重编译原地更新）',
       parameters: { workflow_id: { type: 'string' } },
+      // Plan B 数据契约：render 给模型文本摘要（不见 manifest 明细/base64）；
+      // presentationMeta 把后端 manifest 投影为客户端契约并落进 block.meta.manifest（客户端可见）。
+      // wrap（ai-cad-plugin.js）对 t.output ?? 默认：仅本工具自带 output。
+      output: {
+        schema: { type: 'string' },
+        render(_args, value) {
+          const parsed = safeParseJson(value);
+          const m = parsed && parsed.ok ? parsed.manifest : null;
+          const text = m
+            ? `3D 预览就绪：${m.parts.length} 个零件（${m.viewer === 'assembly' ? '装配体' : '单零件'}）${m.assembly_step ? '，装配 ' + m.assembly_step : ''}。`
+            : `3D 预览失败：${(parsed && parsed.error) || 'manifest 缺失或非法'}`;
+          return [{ type: 'text', text }];
+        },
+        presentationMeta(_args, value) {
+          const parsed = safeParseJson(value);
+          if (!parsed || !parsed.ok || !parsed.manifest) return;
+          return { manifest: clientManifest(parsed.manifest) };
+        },
+      },
       async execute(ctx, args) {
         const st = await needs(ctx, args);
         if (st.status !== 'compiled' && st.status !== 'verified' && st.status !== 'completed') {

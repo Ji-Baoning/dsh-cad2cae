@@ -76,4 +76,11 @@ describe('CadShowStepViewer', () => {
     const { getByText } = render(<CadShowStepViewer callId="call-1" block={{ meta: {} }} />);
     expect(getByText(/manifest 缺失或非法/)).toBeTruthy();
   });
+
+  it('运行态（无 content 无 meta）→ 加载卡而非误报错误', () => {
+    store.publish('call-1');
+    const { getByText } = render(<CadShowStepViewer callId="call-1" block={{}} />);
+    expect(getByText(/3D 预览生成中/)).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(/manifest 缺失或非法/);
+  });
 });

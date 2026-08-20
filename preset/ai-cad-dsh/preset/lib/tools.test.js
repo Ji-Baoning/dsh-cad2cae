@@ -146,3 +146,60 @@ test('cad_show_step manifest 失败 → MANIFEST_FAILED（cmd_manifest {ok:false
     rmSync(outDir, { recursive: true, force: true });
   }
 });
+
+test('只有 cad_show_step 自带 output（其余 22 个走 wrap 默认 render）', () => {
+  const tools = makeTools({ python: 'python3' });
+  assert.deepEqual(tools.filter(t => t.output !== undefined).map(t => t.name), ['cad_show_step']);
+});
+
+test('cad_show_step.output.render 只给模型文本摘要（不 dump manifest 明细）', () => {
+  const tools = Object.fromEntries(makeTools({ python: 'python3' }).map(t => [t.name, t]));
+  const value = JSON.stringify({ ok: true, manifest: {
+    version: 1, workflow_id: 'wf-1', viewer: 'assembly',
+    parts: [{ id: 'c1', part_ref: 'hn1', step: 'cad-state/x/hn1.step',
+      transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1], measure: {} }],
+    connections: [], assembly_step: 'cad-state/x/assembly.step',
+  } });
+  const blocks = tools.cad_show_step.output.render({}, value);
+  assert.equal(blocks[0].type, 'text');
+  assert.match(blocks[0].text, /3D 预览就绪/);
+  assert.doesNotMatch(blocks[0].text, /workflow_id/); // 摘要而非原始 JSON dump
+});
+
+test('cad_show_step.output.presentationMeta 产出客户端契约 manifest（step_b64/name/measure 键名）', () => {
+  // 真实文件系统（REPO_ROOT/cad-state/<id>，gitignore 内）：presentationMeta 经 node fs
+  // 读 STEP 字节做 base64。写入一个真实 STEP 文件断言 step_b64 与 measure 键名转换。
+  const id = 'wf-meta-' + Date.now();
+  const outDir = join(REPO_ROOT, 'cad-state', id);
+  mkdirSync(outDir, { recursive: true });
+  const stepRel = join('cad-state', id, 'hn1.step');
+  const stepContent = 'ISO-10303-21;\nFAKE STEP DATA\n';
+  writeFileSync(join(REPO_ROOT, stepRel), stepContent, 'utf8');
+  const tools = Object.fromEntries(makeTools({ python: 'python3' }).map(t => [t.name, t]));
+  const backendManifest = {
+    version: 1, workflow_id: id, viewer: 'assembly',
+    parts: [{ id: 'c1', part_ref: 'hn1', step: stepRel,
+      transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
+      measure: { volume_m3: 0.001, surface_area_m2: 0.02, centroid_m: [0, 0, 0], watertight: true } }],
+    connections: [{ id: 'J1', type: 'kinematic', a: 'c1', b: 'c2' }],
+    assembly_step: join('cad-state', id, 'assembly.step'),
+  };
+  try {
+    const meta = tools.cad_show_step.output.presentationMeta({}, JSON.stringify({ ok: true, manifest: backendManifest }));
+    assert.ok(meta && meta.manifest, 'presentationMeta 应返回 { manifest }');
+    const p = meta.manifest.parts[0];
+    assert.equal(p.name, 'hn1');
+    assert.equal(p.step_b64, Buffer.from(stepContent).toString('base64'));
+    assert.deepEqual(p.measure, { volume: 0.001, surface_area: 0.02, centroid: [0, 0, 0], watertight: true });
+    assert.equal(meta.manifest.assembly_step, join('cad-state', id, 'assembly.step'));
+    assert.equal(meta.manifest.connections[0].id, 'J1');
+  } finally {
+    rmSync(outDir, { recursive: true, force: true });
+  }
+});
+
+test('cad_show_step.output.presentationMeta 对非 manifest 值返回 undefined（不产出 meta）', () => {
+  const tools = Object.fromEntries(makeTools({ python: 'python3' }).map(t => [t.name, t]));
+  assert.equal(tools.cad_show_step.output.presentationMeta({}, JSON.stringify({ ok: false, error: 'x' })), undefined);
+  assert.equal(tools.cad_show_step.output.presentationMeta({}, 'not json'), undefined);
+});

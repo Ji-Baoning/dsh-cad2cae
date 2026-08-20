@@ -29,6 +29,15 @@ export function CadShowStepViewer({ callId, block }: ToolViewProps) {
     return <StaleCard />;
   }
 
+  // 运行态：call 尚未 settle（block 既无 content 也无 meta）→ 显示加载态，不误报 manifest 缺失。
+  if (!block?.content && block?.meta === undefined) {
+    return (
+      <div style={{ color: '#8b93a1', fontSize: 13, padding: '6px 12px' }}>
+        3D 预览生成中…
+      </div>
+    );
+  }
+
   const manifest = parseManifest(block?.meta);
   if (!manifest) {
     return <ErrorCard reason="manifest 缺失或非法（cad_show_step 未返回可用预览数据）" />;

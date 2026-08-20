@@ -34,7 +34,9 @@ export function apply(ctx, config) {
     // output.render 的返回值就是模型看到的 tool-result 内容（dsh-tools createSuccessResult）。
     // 历史 bug：render() 无条件 return ''，使模型拿不到任何工具结果（session 里 tool-result content 为空）。
     // wlj 参照插件的标准写法：返回 [{ type: 'text', text }] 内容块。
-    output: { schema: { type: 'string' }, render(_args, value) {
+    // t.output ?? 默认：cad_show_step 自带 output（presentationMeta 投递客户端 manifest，见 tools.js），
+    // 其余 22 个工具仍走默认 render（JSON 序列化结果给模型）。
+    output: t.output ?? { schema: { type: 'string' }, render(_args, value) {
       return [{ type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value, null, 2) }];
     } },
     async execute(args) {
