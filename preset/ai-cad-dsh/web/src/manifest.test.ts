@@ -51,4 +51,18 @@ describe('parseManifest · block.meta.manifest 校验', () => {
     const bad = { ...VALID, parts: [{ ...VALID.parts[0], measure: undefined }] };
     expect(parseManifest({ manifest: bad })).toBeNull();
   });
+
+  it('type 非 static/kinematic → null', () => {
+    const bad = { ...VALID, connections: [{ id: 'J1', type: 'banana', a: 'c1', b: 'c2' }] };
+    expect(parseManifest({ manifest: bad })).toBeNull();
+  });
+
+  it('合法非空 connections 解析并保留字段', () => {
+    const withConn = { ...VALID, connections: [{ id: 'J1', type: 'kinematic', a: 'c1', b: 'c2' }] };
+    const m = parseManifest({ manifest: withConn });
+    expect(m).not.toBeNull();
+    expect(m!.connections).toHaveLength(1);
+    expect(m!.connections[0].type).toBe('kinematic');
+    expect(m!.connections[0].a).toBe('c1');
+  });
 });

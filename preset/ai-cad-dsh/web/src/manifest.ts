@@ -77,7 +77,8 @@ export function parseManifest(meta: unknown): Manifest | null {
   const connections: ConnectionInfo[] = [];
   if (Array.isArray(m.connections)) {
     for (const c of m.connections) {
-      if (!isRecord(c) || typeof c.id !== 'string' || typeof c.type !== 'string' ||
+      // type 仅允许 static|kinematic 两个取值（数据契约）。
+      if (!isRecord(c) || typeof c.id !== 'string' || (c.type !== 'static' && c.type !== 'kinematic') ||
           typeof c.a !== 'string' || typeof c.b !== 'string') return null;
       connections.push({ id: c.id, type: c.type, a: c.a, b: c.b });
     }
