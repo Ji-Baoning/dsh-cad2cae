@@ -26,6 +26,18 @@ writeFileSync(
 const banner = `window.__ModuleLoader__.load({ id: ${JSON.stringify(PKG_ID)}, factory: (require) => {\nvar module = { exports: {} };\nvar exports = module.exports;\nObject.defineProperty(exports, Symbol.toStringTag, { value: 'Module' });\n`;
 const footer = '\nreturn module.exports;\n} });\n';
 
+// occt-import-js 的 dist 含 Emscripten node 分支（if(ENVIRONMENT_IS_NODE){ require('fs'/'path'/'crypto') }），
+// 浏览器运行时该分支不执行。platform:browser 下 esbuild 会静态解析这些 require 并因 node 内建报错，
+// 故以空桩满足静态解析（运行时由 ENVIRONMENT_IS_NODE 守卫，空桩永不被调用）。
+const nodeBuiltinStub = {
+  name: 'node-builtin-stub',
+  setup(build) {
+    const stub = { namespace: 'node-builtin-stub', path: 'empty' };
+    build.onResolve({ filter: /^(fs|path|crypto|node:fs|node:path|node:crypto)$/ }, () => stub);
+    build.onLoad({ filter: /.*/, namespace: 'node-builtin-stub' }, () => ({ contents: 'module.exports = {};', loader: 'js' }));
+  },
+};
+
 await build({
   entryPoints: [resolve(root, 'src/index.ts')],
   outfile: resolve(root, 'dist/client.js'),
@@ -36,6 +48,7 @@ await build({
   sourcemap: true,
   jsx: 'automatic',
   external: ['react', 'react/jsx-runtime', 'react-dom', 'react-dom/client'],
+  plugins: [nodeBuiltinStub],
   banner: { js: banner },
   footer: { js: footer },
 });

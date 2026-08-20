@@ -24,7 +24,11 @@ test('build 产出符合 DSH 客户端 bundle 契约', () => {
     '含 __ModuleLoader__.load 注册');
   assert.match(src, /var module = \{ exports: \{\} \}/, '工厂内定义 module');
   assert.match(src, /return module\.exports;/, '工厂返回 module.exports');
-  assert.doesNotMatch(src, /locateFile/, '无 wasm 网络加载（走 wasmBinary）');
+  // wasm 契约：base64 内联 + wasmBinary 注入（不网络加载）。
+  // 注意：Emscripten 产物无论是否传 wasmBinary 都会定义 locateFile 函数（运行时由 wasmBinary 短路），
+  // 故断言内联 magic 头（AGFzbQ = \0asm 的 base64 前缀）与 wasmBinary 注入，而非 locateFile 字符串。
+  assert.match(src, /AGFzbQ/, 'wasm 二进制已 base64 内联进 bundle（\0asm magic 前缀）');
+  assert.match(src, /wasmBinary/, 'wasm 注入走 wasmBinary（非网络加载）');
 
   // 真实 materialize：按 DSH 加载器方式执行 bundle，断言返回模块确实暴露 apply/inject。
   // （比正则更强：直接证明加载器能解析 exports.apply）
