@@ -16,6 +16,7 @@ def emit_assembly_source(assembly, components):
             comp_ref[cid] = pref
     lines = [
         '# 由 AI-CAD 生成（交付物①：装配建模语言源码）',
+        'import json',
         'from importlib import import_module',
         'from build123d import Compound, Unit, export_step',
         '',
@@ -40,4 +41,16 @@ def emit_assembly_source(assembly, components):
     lines.append('assembly = Compound(children=list(parts.values()))')
     lines.append("export_step(assembly, 'assembly.step', unit=Unit.M)")
     lines.append('')
+    lines.append('# 3D 预览辅助：写出装配定位（placements.json），查看器按零件高亮/显隐')
+    lines.append('placements = {}')
+    lines.append('for _cid in parts:')
+    lines.append("    _loc = parts[_cid].location")
+    lines.append('    _cx, _cy, _cz = _loc.x_axis.direction, _loc.y_axis.direction, _loc.z_axis.direction')
+    lines.append('    _t = _loc.position')
+    lines.append('    placements[_cid] = [_cx.X, _cy.X, _cz.X, _t.X,')
+    lines.append('                        _cx.Y, _cy.Y, _cz.Y, _t.Y,')
+    lines.append('                        _cx.Z, _cy.Z, _cz.Z, _t.Z,')
+    lines.append('                        0.0, 0.0, 0.0, 1.0]')
+    lines.append("with open('placements.json', 'w', encoding='utf-8') as _f:")
+    lines.append('    json.dump(placements, _f, indent=2)')
     return '\n'.join(lines) + '\n'
