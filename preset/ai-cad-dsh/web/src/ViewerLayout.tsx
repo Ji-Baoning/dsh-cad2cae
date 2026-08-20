@@ -1,9 +1,9 @@
 // src/ViewerLayout.tsx — 布局：左侧零件树（显隐/高亮/测量），右侧 three.js 视口。
 import { useEffect, useRef, useState } from 'react';
-import * as THREE from 'three';
 import type { Manifest } from './manifest';
 import { stepToGroup } from './occt';
 import { createScene, type SceneHandle } from './scene';
+import { base64ToBytes } from './base64';
 
 export function ViewerLayout({ manifest }: { manifest: Manifest }) {
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -12,6 +12,8 @@ export function ViewerLayout({ manifest }: { manifest: Manifest }) {
     Object.fromEntries(manifest.parts.map((p) => [p.id, true])),
   );
   const [highlighted, setHighlighted] = useState<string | null>(null);
+  // 持有最新显隐/高亮（effect #3 同步更新）；异步加载完成重放用，防加载期用户意图丢失
+  const viewStateRef = useRef({ visible, highlighted });
 
   // 1) 场景初始化（一次）
   useEffect(() => {
@@ -30,10 +32,13 @@ export function ViewerLayout({ manifest }: { manifest: Manifest }) {
     (async () => {
       for (const part of manifest.parts) {
         try {
-          const bytes = Uint8Array.from(atob(part.step_b64), (c) => c.charCodeAt(0));
-          const group = await stepToGroup(bytes, part.transform);
+          const group = await stepToGroup(base64ToBytes(part.step_b64), part.transform);
           if (cancelled) return;
           scene.addPart(part.id, group);
+          // 立即重放当前显隐/高亮：零件落地前用户已取消勾选/高亮的意图不被 addPart 默认可见丢弃
+          const { visible: curVisible, highlighted: curHighlighted } = viewStateRef.current;
+          scene.setPartVisible(part.id, curVisible[part.id] !== false);
+          scene.setPartHighlight(part.id, curHighlighted === part.id);
         } catch (error) {
           // 单零件失败不拖垮整体；响亮提示
           console.error(`[cad3d] 零件 ${part.id} 加载失败:`, error);
@@ -46,6 +51,7 @@ export function ViewerLayout({ manifest }: { manifest: Manifest }) {
 
   // 3) 高亮/显隐同步到场景
   useEffect(() => {
+    viewStateRef.current = { visible, highlighted };
     const scene = sceneRef.current;
     if (!scene) return;
     for (const part of manifest.parts) {

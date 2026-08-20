@@ -18,6 +18,9 @@ export function CadShowStepViewer({ callId, block }: ToolViewProps) {
   const latest = useSyncExternalStore(subscribe, getLatestCallId);
 
   // 新调用到达即发布；旧卡片因 latest 已变而收敛为细条。
+  // 已知边界：无单调调用序列信号，latest = 最后 publish 者。live session 下
+  // arrival 顺序 == publish 顺序 → 正确；整页重载多卡片同时 mount 时，latest
+  // 变为"最后挂载者"而非最新调用（Plan 验收 #5 依赖 DSH 挂载顺序）。
   useEffect(() => {
     publish(callId);
   }, [callId]);

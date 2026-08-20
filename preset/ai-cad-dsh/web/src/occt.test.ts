@@ -1,10 +1,10 @@
 // src/occt.test.ts — 集成测试：Node 里跑真实 occt WASM + 真实 STEP。
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import * as THREE from 'three';
 import { getOcct, stepToGroup } from './occt';
-import { bytesToBase64 } from './base64';
 
 const fixture = resolve(dirname(fileURLToPath(import.meta.url)), '../test/fixtures/hinge-part.step');
 

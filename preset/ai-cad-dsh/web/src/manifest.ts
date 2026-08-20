@@ -36,6 +36,10 @@ function isFiniteArray(v: unknown): v is number[] {
   return Array.isArray(v) && v.every((n) => typeof n === 'number' && Number.isFinite(n));
 }
 
+function isFiniteNumber(v: unknown): v is number {
+  return typeof v === 'number' && Number.isFinite(v);
+}
+
 /** 校验一个 part；非法返回 null。 */
 function parsePart(raw: unknown): PartManifest | null {
   if (!isRecord(raw)) return null;
@@ -45,7 +49,7 @@ function parsePart(raw: unknown): PartManifest | null {
     typeof raw.name !== 'string' || typeof raw.step_b64 !== 'string' ||
     !isFiniteArray(raw.transform) || raw.transform.length !== 16 ||
     !isRecord(measure) || !isFiniteArray(measure.centroid) || measure.centroid.length !== 3 ||
-    typeof measure.volume !== 'number' || typeof measure.surface_area !== 'number' ||
+    !isFiniteNumber(measure.volume) || !isFiniteNumber(measure.surface_area) ||
     typeof measure.watertight !== 'boolean'
   ) return null;
   return {

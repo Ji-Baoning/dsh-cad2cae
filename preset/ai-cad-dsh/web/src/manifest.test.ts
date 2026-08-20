@@ -52,6 +52,13 @@ describe('parseManifest · block.meta.manifest 校验', () => {
     expect(parseManifest({ manifest: bad })).toBeNull();
   });
 
+  it('measure.volume / surface_area 非有限数（NaN/Infinity）→ null', () => {
+    const withNaN = { ...VALID, parts: [{ ...VALID.parts[0], measure: { ...VALID.parts[0].measure, volume: NaN } }] };
+    const withInf = { ...VALID, parts: [{ ...VALID.parts[0], measure: { ...VALID.parts[0].measure, surface_area: Infinity } }] };
+    expect(parseManifest({ manifest: withNaN })).toBeNull();
+    expect(parseManifest({ manifest: withInf })).toBeNull();
+  });
+
   it('type 非 static/kinematic → null', () => {
     const bad = { ...VALID, connections: [{ id: 'J1', type: 'banana', a: 'c1', b: 'c2' }] };
     expect(parseManifest({ manifest: bad })).toBeNull();

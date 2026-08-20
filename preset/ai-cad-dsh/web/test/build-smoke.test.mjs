@@ -44,7 +44,8 @@ test('build 产出符合 DSH 客户端 bundle 契约', () => {
   }, { filename: 'client.js' });
   assert.ok(def, '__ModuleLoader__.load 被调用');
   assert.equal(def.id, '@ai-cad/cad3d-preview', 'id 正确');
-  // 占位阶段 bundle 无真实 react 依赖，stub require 足够
+  // ViewerLayout 已 import react，但 react API 调用都在组件体内（非模块顶层）；
+  // 执行 factory 时对 require('react') 的 stub 返回 {} 即足够，apply 等导出不触 react API。
   const mod = def.factory(() => ({}));
   assert.equal(typeof mod.apply, 'function', '返回模块暴露 apply');
   // vm 沙箱是独立 realm：先展开成宿主数组再比较（元素为原始字符串，跨 realm 安全）
@@ -52,8 +53,8 @@ test('build 产出符合 DSH 客户端 bundle 契约', () => {
 });
 
 test('react/react-dom 构建期 external（不内联）', async () => {
-  // 占位入口未 import react，主 bundle 里暂无 require('react')。
-  // 用探测入口真实 import react，以与 build.mjs 相同的 external 配置 bundle，
+  // 主 bundle 已 import react（ViewerLayout），但 react 为 external；
+  // 用探测入口以与 build.mjs 相同的 external 配置 bundle，
   // 断言输出保留 require 调用 —— 直接验证构建链的 external 契约。
   const probeDir = join(root, '.smoke-probe');
   mkdirSync(probeDir, { recursive: true });

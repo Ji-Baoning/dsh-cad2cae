@@ -5,7 +5,9 @@
   "type": "module",
   "main": "dist/client.js",
   "exports": {
-    "./client": { "default": "./dist/client.js" },
+    "./client": {
+      "default": "./dist/client.js"
+    },
     "./package.json": "./package.json"
   },
   "dsh": {
@@ -16,10 +18,12 @@
   "scripts": {
     "build": "node build.mjs",
     "test": "vitest run",
-    "test:smoke": "node --test test/build-smoke.test.mjs"
+    "test:smoke": "node --test test/build-smoke.test.mjs",
+    "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "@testing-library/react": "^16.3.0",
+    "@types/node": "^26.2.0",
     "@types/react": "^18.3.1",
     "@types/three": "^0.185.0",
     "esbuild": "^0.25.0",
