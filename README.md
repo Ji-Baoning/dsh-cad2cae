@@ -31,6 +31,13 @@ node install-dsh-preset.mjs --dry-run  # 预检（只打印将做什么，不写
 
 脚本遵守 DSH 的 home 解析（`$DSH_HOME` 优先，默认 `~/.dsh`），支持 `--id <id>` 自定义预设 id；仓库源文件保持原样，复制时排除测试与缓存文件。找不到 dsh harness 时会警告并给出手动建链接的命令。安装后 DSH 会话选择 **AI-CAD** 即可（22 个 `cad_*` 工具）；**若 dsh web 进程曾加载过失败版本的预设，需重启 dsh web 后再选择**（Node 的 ESM 失败导入会按路径缓存，改名入口也只能绕开一次）。
 
+### 3D 预览（cad_show_step）
+
+- 安装脚本会**构建并注册 3D 预览客户端插件**（`preset/ai-cad-dsh/web` → DSH web profile）：浏览器端 occt-import-js（WASM）直接解析 STEP 字节，渲染可交互 3D 视口 + 零件树（显隐/高亮）+ 测量面板。
+- `--no-web` 可跳过客户端插件安装；`node install-web-plugin.mjs --force` 单独重装。
+- 使用：compile 成功后 agent 调用 `cad_show_step`，对话中同一张 3D 卡片原地更新，旧调用收敛为细条。
+- 工具数仍为 22（`cad_show_step` 属既有 cad 工具集；`show_image` 独立计）。
+
 **后端 CLI 直调**：
 
 ```bash

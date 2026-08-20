@@ -245,11 +245,12 @@ async function requireFile(dir, name) {
 class UsageError extends Error {}
 
 function parseArgs(argv) {
-  const opts = { id: DEFAULT_ID, force: false, dryRun: false, help: false };
+  const opts = { id: DEFAULT_ID, force: false, dryRun: false, help: false, noWeb: false };
   for (let i = 0; i < argv.length; i++) {
     switch (argv[i]) {
       case '--force': opts.force = true; break;
       case '--dry-run': opts.dryRun = true; break;
+      case '--no-web': opts.noWeb = true; break;
       case '--help':
       case '-h': opts.help = true; break;
       case '--id':
@@ -274,6 +275,7 @@ function printHelp() {
   --id <id>      自定义预设 id（默认 ${DEFAULT_ID}，须匹配 ${PRESET_ID}）
   --force        目标已存在时删除后全新复制（默认幂等）
   --dry-run      只打印将执行的动作，不写盘
+  --no-web       跳过 web 客户端插件安装（默认安装）
   --help         显示本帮助
 
 说明：
@@ -367,6 +369,13 @@ async function main(argv) {
   console.log('DSH 中：新会话选择 AI-CAD 即可使用 22 个 cad_* 工具。');
   console.log('提示：若 dsh web 已运行过失败导入，请重启 dsh web 后再选择 AI-CAD。');
   console.log(`卸载：rm -rf ${target}`);
+
+  // ── Plan B：web 客户端插件安装（可 --no-web 跳过）──
+  if (!opts.noWeb) {
+    const { installWebPlugin } = await import('./install-web-plugin.mjs');
+    const web = await installWebPlugin(home, { force: opts.force });
+    console.log(`[web] 3D 预览客户端插件：${web.patched ? '已注册 toolview 插槽' : '已就绪'}（${web.pluginDir}）`);
+  }
   return 0;
 }
 
